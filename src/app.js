@@ -73,13 +73,8 @@ async function startServer() {
             console.log(`   ${service.padEnd(10)}: ${status}`);
         });
 
-        // Start WebSocket proxy for voice calls
-        console.log('🔌 Starting WebSocket proxy for voice integration...');
-        const wsProxy = new WebSocketProxy();
-        wsProxy.start();
-
         // Start server
-        app.listen(PORT, () => {
+        const server = app.listen(PORT, () => {
             console.log(`\n🏦 Infobip Capital Demo Server running on port ${PORT}`);
             console.log(`📱 Registration form: http://localhost:${PORT}`);
             console.log(`🔧 Health check: http://localhost:${PORT}/api/health`);
@@ -93,6 +88,11 @@ async function startServer() {
             }
 
             console.log('\n🎯 Ready for Dev Days NYC demo!');
+
+            // Start WebSocket proxy for voice calls using the same server
+            console.log('🔌 Starting WebSocket proxy for voice integration...');
+            const wsProxy = new WebSocketProxy();
+            wsProxy.attachToServer(server);
         });
 
     } catch (error) {

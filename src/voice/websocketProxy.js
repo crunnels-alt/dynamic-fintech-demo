@@ -389,6 +389,22 @@ class WebSocketProxy {
         this.wss.close();
         this.server.close();
     }
+
+    /**
+     * Attach WebSocket server to existing HTTP server (for Railway single-port constraint)
+     * @param {http.Server} httpServer - Existing HTTP server
+     */
+    attachToServer(httpServer) {
+        this.wss = new WebSocket.Server({
+            server: httpServer,
+            path: '/websocket-voice'
+        });
+
+        this.setupWebSocketServer();
+
+        console.log(`🔌 WebSocket Proxy attached to main server at /websocket-voice`);
+        console.log(`📡 Ready to bridge Infobip ↔ ElevenLabs audio streams`);
+    }
 }
 
 module.exports = WebSocketProxy;

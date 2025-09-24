@@ -6,8 +6,14 @@ class DatabaseFactory {
         const databaseUrl = process.env.DATABASE_URL;
         const environment = process.env.NODE_ENV || 'development';
         
-        if (environment === 'production' && databaseUrl && databaseUrl.includes('postgres')) {
-            console.log('🐘 Using PostgreSQL for production environment');
+        console.log('🔍 DatabaseFactory Debug:');
+        console.log('   DATABASE_URL exists:', !!databaseUrl);
+        console.log('   DATABASE_URL contains postgres:', databaseUrl ? databaseUrl.includes('postgres') : 'N/A');
+        console.log('   NODE_ENV:', environment);
+        console.log('   Production check:', environment === 'production');
+        
+        if (databaseUrl && databaseUrl.includes('postgres')) {
+            console.log('🐘 Using PostgreSQL database');
             return new PostgreSQLManager(databaseUrl);
         } else {
             console.log('🗂️  Using SQLite for development environment');

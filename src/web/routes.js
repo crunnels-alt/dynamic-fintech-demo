@@ -212,7 +212,8 @@ router.get('/api/health', async (req, res) => {
                 database: dbHealthy ? 'healthy' : 'unhealthy',
                 sms: smsStatus,
                 voice: process.env.INFOBIP_API_KEY ? 'configured' : 'not_configured',
-                openai: process.env.OPENAI_API_KEY ? 'configured' : 'not_configured'
+                openai: process.env.OPENAI_API_KEY ? 'configured' : 'not_configured',
+                elevenlabs: process.env.ELEVENLABS_API_KEY ? 'configured' : 'not_configured'
             },
             environment: process.env.NODE_ENV || 'development'
         };

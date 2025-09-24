@@ -1,4 +1,14 @@
-require('dotenv').config();
+// Load environment variables (Railway provides them directly in production)
+if (process.env.NODE_ENV !== 'production') {
+    require('dotenv').config();
+}
+
+// Debug: Log some key environment variables
+console.log('🔧 Environment Debug:');
+console.log('   NODE_ENV:', process.env.NODE_ENV);
+console.log('   DATABASE_URL exists:', !!process.env.DATABASE_URL);
+console.log('   DEMO_CALL_NUMBER:', process.env.DEMO_CALL_NUMBER);
+console.log('   Railway env vars:', Object.keys(process.env).filter(k => k.startsWith('RAILWAY')).length);
 const express = require('express');
 const cors = require('cors');
 const path = require('path');

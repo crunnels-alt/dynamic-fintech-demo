@@ -14,7 +14,7 @@ class PostgreSQLFinTechManager {
 
     async initialize() {
         console.log('🐘 Initializing PostgreSQL connection...');
-        
+
         this.pool = new Pool({
             connectionString: this.connectionString,
             ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
@@ -27,6 +27,18 @@ class PostgreSQLFinTechManager {
 
         await this.createTables();
         console.log('✅ PostgreSQL database initialized successfully!');
+    }
+
+    async testConnection() {
+        try {
+            const client = await this.pool.connect();
+            await client.query('SELECT 1');
+            client.release();
+            return true;
+        } catch (error) {
+            console.error('PostgreSQL connection test failed:', error);
+            return false;
+        }
     }
 
     async createTables() {

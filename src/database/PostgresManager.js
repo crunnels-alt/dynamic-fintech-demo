@@ -114,21 +114,21 @@ class PostgreSQLFinTechManager {
             {
                 name: 'Sarah Johnson',
                 department: 'Fraud Prevention',
-                phone_number: '+1-555-FRAUD',
+                phone_number: '+15553728321',
                 email: 'sarah.johnson@infobipCapital.demo',
                 specialization: 'fraud_investigation'
             },
             {
                 name: 'Michael Chen',
                 department: 'Loan Services',
-                phone_number: '+1-555-LOANS',
+                phone_number: '+15555626767',
                 email: 'michael.chen@infobipCapital.demo',
                 specialization: 'personal_loans'
             },
             {
                 name: 'Emily Rodriguez',
                 department: 'Customer Service',
-                phone_number: '+1-555-HELP',
+                phone_number: '+15554357000',
                 email: 'emily.rodriguez@infobipCapital.demo',
                 specialization: 'general_support'
             }

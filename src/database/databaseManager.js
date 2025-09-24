@@ -124,21 +124,21 @@ class FinTechDatabaseManager {
             {
                 name: 'Sarah Johnson',
                 department: 'Fraud Prevention',
-                phoneNumber: '+1-555-FRAUD',
+                phoneNumber: '+15553728321',
                 email: 'sarah.johnson@securebank.demo',
                 specialization: 'fraud_investigation'
             },
             {
                 name: 'Michael Chen',
                 department: 'Loan Services',
-                phoneNumber: '+1-555-LOANS',
+                phoneNumber: '+15555626767',
                 email: 'michael.chen@securebank.demo',
                 specialization: 'personal_loans'
             },
             {
                 name: 'Emily Rodriguez',
                 department: 'Customer Service',
-                phoneNumber: '+1-555-HELP',
+                phoneNumber: '+15554357000',
                 email: 'emily.rodriguez@securebank.demo',
                 specialization: 'general_support'
             }

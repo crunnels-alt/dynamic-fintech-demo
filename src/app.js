@@ -14,6 +14,7 @@ const cors = require('cors');
 const path = require('path');
 const DatabaseFactory = require('./database/DatabaseFactory');
 const routes = require('./web/routes');
+const WebSocketProxy = require('./voice/websocketProxy');
 
 // Initialize database manager based on environment
 const databaseManager = DatabaseFactory.create();
@@ -72,13 +73,18 @@ async function startServer() {
             console.log(`   ${service.padEnd(10)}: ${status}`);
         });
 
+        // Start WebSocket proxy for voice calls
+        console.log('🔌 Starting WebSocket proxy for voice integration...');
+        const wsProxy = new WebSocketProxy();
+        wsProxy.start();
+
         // Start server
         app.listen(PORT, () => {
             console.log(`\n🏦 Infobip Capital Demo Server running on port ${PORT}`);
             console.log(`📱 Registration form: http://localhost:${PORT}`);
             console.log(`🔧 Health check: http://localhost:${PORT}/api/health`);
             console.log(`📋 Demo scenarios: http://localhost:${PORT}/api/scenarios`);
-            
+
             if (process.env.NODE_ENV !== 'production') {
                 console.log('\n🧪 Development Mode:');
                 console.log('   - Detailed error messages enabled');

@@ -1,0 +1,9 @@
+<svg width="200" height="80" viewBox="0 0 200 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Infobip circular logo -->
+  <circle cx="40" cy="40" r="35" fill="#2D2D2D"/>
+  <circle cx="40" cy="40" r="25" fill="none" stroke="white" stroke-width="3"/>
+  <rect x="30" y="30" width="20" height="20" rx="4" fill="white"/>
+  
+  <!-- Infobip text -->
+  <text x="85" y="50" font-family="Arial, sans-serif" font-size="28" font-weight="normal" fill="#2D2D2D">infobip</text>
+</svg>

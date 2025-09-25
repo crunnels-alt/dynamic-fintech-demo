@@ -232,23 +232,8 @@ router.post('/webhook/voice', async (req, res) => {
         const event = req.body;
         console.log('📞 Received Infobip Voice event:', event.type, event.callId);
         
-        // 🔍 DEBUG: Log full event payload
-        console.log('🔍 FULL EVENT PAYLOAD:', JSON.stringify(event, null, 2));
-        
         switch (event.type) {
             case 'CALL_RECEIVED':
-                // 🔍 DEBUG: Use debug dialog creation
-                console.log('🧪 USING DEBUG MODE for dialog creation');
-                const { debugDialogCreation } = require('../../debug-webhook');
-                
-                try {
-                    await debugDialogCreation(event.callId, event.from);
-                    console.log('✅ Debug dialog creation succeeded!');
-                } catch (debugError) {
-                    console.log('❌ Debug dialog creation failed - this is the exact error we need to analyze');
-                }
-                
-                // Also run the normal handler for comparison
                 await callsHandler.handleCallReceived(event);
                 break;
                 

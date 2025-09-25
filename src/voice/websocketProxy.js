@@ -111,13 +111,17 @@ class WebSocketProxy {
                 elevenLabsWs.on('open', () => {
                     console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
 
-                    // 🎯 NEW: Send personalized configuration based on user context
+                    // 🔧 TEMP FIX: Use basic config to ensure audio works, add personalization after
+                    if (userContext && userContext.name) {
+                        console.log(`🎯 [${connectionId}] User context found: ${userContext.name} (${userContext.companyName})`);
+                        console.log(`💰 [${connectionId}] Account balance: $${userContext.fakeAccountBalance}`);
+                    }
+                    
                     const initialConfig = {
-                        type: 'conversation_initiation_client_data',
-                        conversation_config_override: this.buildPersonalizedConfig(connectionId, userContext)
+                        type: 'conversation_initiation_client_data'
                     };
 
-                    console.log(`📤 [${connectionId}] Sending personalized config to ElevenLabs`);
+                    console.log(`📤 [${connectionId}] Sending basic config to ElevenLabs`);
                     elevenLabsWs.send(JSON.stringify(initialConfig));
                 });
 

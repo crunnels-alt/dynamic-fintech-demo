@@ -199,11 +199,15 @@ class WebSocketProxy {
                 }
 
                 // Binary audio data from Infobip - forward to ElevenLabs
+                console.log(`🎤 [${connectionId}] Received ${message.length} bytes of audio from Infobip`);
                 if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
                     const audioMessage = {
                         user_audio_chunk: Buffer.from(message).toString('base64'),
                     };
                     elevenLabsWs.send(JSON.stringify(audioMessage));
+                    console.log(`📤 [${connectionId}] Forwarded audio to ElevenLabs`);
+                } else {
+                    console.log(`⚠️  [${connectionId}] ElevenLabs WebSocket not ready, audio dropped`);
                 }
             } catch (error) {
                 console.error(`❌ [${connectionId}] Error processing Infobip message:`, error);
@@ -231,9 +235,13 @@ class WebSocketProxy {
 
             case 'audio':
                 // Forward audio from ElevenLabs to Infobip
+                console.log(`🎵 [${connectionId}] Received audio from ElevenLabs, forwarding to Infobip`);
                 const audioBuffer = Buffer.from(message.audio_event.audio_base_64, 'base64');
                 if (infobipWs.readyState === WebSocket.OPEN) {
                     infobipWs.send(audioBuffer);
+                    console.log(`📤 [${connectionId}] Sent ${audioBuffer.length} bytes of audio to Infobip`);
+                } else {
+                    console.log(`⚠️  [${connectionId}] Infobip WebSocket not ready, audio dropped`);
                 }
                 break;
 

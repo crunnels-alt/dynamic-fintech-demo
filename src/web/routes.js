@@ -102,12 +102,12 @@ router.post('/api/register', [
             user: {
                 id: user.id,
                 name: user.name,
-                phoneNumber: user.phoneNumber,
-                companyName: user.companyName,
-                fakeAccountNumber: user.fakeAccountNumber,
-                fakeAccountBalance: user.fakeAccountBalance,
-                loanApplicationStatus: user.loanApplicationStatus,
-                fraudScenario: Boolean(user.fraudScenario)
+                phoneNumber: user.phone_number,
+                companyName: user.company_name,
+                fakeAccountNumber: user.fake_account_number,
+                fakeAccountBalance: user.fake_account_balance,
+                loanApplicationStatus: user.loan_application_status,
+                fraudScenario: Boolean(user.fraud_scenario)
             },
             demoNumber: process.env.DEMO_CALL_NUMBER || '+1-XXX-XXX-XXXX'
         });

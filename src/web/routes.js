@@ -370,6 +370,8 @@ router.get('/knowledge-base', async (req, res) => {
 - ❌ NEVER ASK FOR: SSN, DOB, PIN, security questions, addresses, or ANY other traditional banking verification
 - 🎯 GOAL: Showcase AI capabilities with smooth, realistic interactions
 - 🔒 SECURITY: Keep it simple - phone + name verification is sufficient
+- 📊 CLIENT DATA: User's specific account info is sent via conversation_initiation_client_data at call start
+- ⚡ IMMEDIATE ACCESS: You have their balance, account number, and status from the first message
 
 ## Company Information
 **Company:** Infobip Capital  

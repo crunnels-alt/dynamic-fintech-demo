@@ -111,17 +111,52 @@ class WebSocketProxy {
                 elevenLabsWs.on('open', () => {
                     console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
 
-                    // 🔧 TEMP FIX: Use basic config to ensure audio works, add personalization after
+                    let initialConfig;
+                    
                     if (userContext && userContext.name) {
                         console.log(`🎯 [${connectionId}] User context found: ${userContext.name} (${userContext.companyName})`);
                         console.log(`💰 [${connectionId}] Account balance: $${userContext.fakeAccountBalance}`);
+                        
+                        // Send personalized user data to ElevenLabs
+                        const balance = parseFloat(userContext.fakeAccountBalance || 0).toLocaleString('en-US', {
+                            style: 'currency',
+                            currency: 'USD'
+                        });
+                        
+                        initialConfig = {
+                            type: 'conversation_initiation_client_data',
+                            client_data: {
+                                user_name: userContext.name,
+                                company_name: userContext.companyName,
+                                account_number: userContext.fakeAccountNumber,
+                                current_balance: balance,
+                                phone_number: userContext.phoneNumber,
+                                loan_status: userContext.loanApplicationStatus || 'None',
+                                fraud_flag: userContext.fraudScenario || false,
+                                call_verification: {
+                                    verified_by_phone: true,
+                                    verified_by_name: true,
+                                    security_check_complete: true
+                                },
+                                context: `Verified customer ${userContext.name} from ${userContext.companyName}. Account ${userContext.fakeAccountNumber} has current balance of ${balance}. ${userContext.loanApplicationStatus && userContext.loanApplicationStatus !== 'None' ? `Loan application status: ${userContext.loanApplicationStatus}.` : ''} ${userContext.fraudScenario ? 'FRAUD ALERT: This account has fraud monitoring enabled.' : ''}`
+                            }
+                        };
+                        
+                        console.log(`📤 [${connectionId}] Sending personalized user data to ElevenLabs`);
+                    } else {
+                        // Basic config for unidentified users
+                        initialConfig = {
+                            type: 'conversation_initiation_client_data',
+                            client_data: {
+                                user_name: 'New Caller',
+                                verification_status: 'pending',
+                                context: 'Unidentified caller - needs phone number and name verification to proceed.'
+                            }
+                        };
+                        
+                        console.log(`📤 [${connectionId}] Sending basic config for unidentified caller`);
                     }
                     
-                    const initialConfig = {
-                        type: 'conversation_initiation_client_data'
-                    };
-
-                    console.log(`📤 [${connectionId}] Sending basic config to ElevenLabs`);
                     elevenLabsWs.send(JSON.stringify(initialConfig));
                 });
 

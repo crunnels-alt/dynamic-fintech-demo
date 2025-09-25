@@ -364,6 +364,13 @@ router.get('/knowledge-base', async (req, res) => {
         // Create comprehensive knowledge base content
         const knowledgeBase = `# Infobip Capital Banking - Live Customer Database
 
+## 🚨 CRITICAL DEMO INSTRUCTIONS 🚨
+**THIS IS A DEMO SYSTEM** - Use simplified verification only:
+- ✅ USE: Phone number, name, company name for verification
+- ❌ NEVER ASK FOR: SSN, DOB, PIN, security questions, addresses, or ANY other traditional banking verification
+- 🎯 GOAL: Showcase AI capabilities with smooth, realistic interactions
+- 🔒 SECURITY: Keep it simple - phone + name verification is sufficient
+
 ## Company Information
 **Company:** Infobip Capital  
 **Industry:** Digital Banking & Financial Services  
@@ -438,17 +445,42 @@ ${officers.map(officer => {
 `;
 }).join('\n')}
 
+## IMPORTANT: Security & Verification Protocols
+
+### Available Customer Verification Methods (ONLY USE THESE):
+1. **Phone Number** - Primary identifier (caller ID should match)
+2. **Full Name** - As registered in the system
+3. **Company Name** - As provided during registration
+4. **Account Number** - Available in database for confirmation
+
+### DO NOT ASK FOR (These don't exist in our system):
+- Social Security Number (SSN)
+- Date of birth
+- Mother's maiden name
+- PIN numbers
+- Security questions
+- Physical address
+- Driver's license number
+- Any other traditional banking verification methods
+
+**VERIFICATION PROCESS:**
+- If caller ID matches registered phone number → Proceed immediately
+- If no caller ID or mismatch → Ask for name and confirm company name
+- That's it! No additional security measures needed for this demo
+
 ## Service Instructions
 
 ### Balance Inquiries
 - Always provide the exact current balance from the database
-- Include account number for verification
+- Include account number for reference
 - Mention any recent significant transactions if relevant
+- NO additional verification needed beyond name/phone confirmation
 
 ### Loan Status Updates
 - Provide current status from loan_applications table
 - Include next steps and assigned officer information
 - Give realistic timelines based on status
+- Share loan officer contact information when helpful
 
 ### Fraud Prevention Protocol
 **CRITICAL:** If customer has fraud_scenario = true, immediately:
@@ -456,22 +488,26 @@ ${officers.map(officer => {
 2. Inform them you're transferring to our fraud specialist
 3. DO NOT discuss account details over the phone
 4. Transfer to Sarah Johnson in Fraud Prevention (+15553728321)
+5. NO additional verification needed - fraud scenarios get immediate escalation
 
 ### Transaction Inquiries
 - Reference specific transactions from the database
 - Provide merchant names, amounts, and dates
 - Categorize spending patterns when helpful
+- Share up to 5 most recent transactions
 
 ### Account Activation
-- Verify customer identity with phone number and name
+- Verify customer identity with phone number and name only
 - Confirm company name matches registration
 - Guide through activation steps
+- No complex security protocols needed
 
 ### General Customer Service
 - Always use customer's name once verified
 - Be professional, helpful, and efficient
 - Escalate complex issues to appropriate specialists
-- Update call statistics in database when possible
+- Keep interactions smooth and demo-friendly
+- Focus on showcasing AI capabilities, not security barriers
 
 ## Demo Scenarios Available
 1. **Balance Inquiry** - Check current account balance

@@ -214,4 +214,4 @@ For questions about this demo or Infobip's APIs:
 
 ---
 
-**Built for Dev Days NYC 2025** • Showcasing the future of AI-powered banking with Infobip's communication platform.
+**Built for Dev Days NYC 2025** • Showcasing the future of AI-powered banking with Infobip's communication platform.# Build trigger Wed Sep 24 21:08:22 PDT 2025

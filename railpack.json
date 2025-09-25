@@ -1,5 +1,12 @@
 {
   "$schema": "https://schema.railpack.com",
+  "steps": {
+    "install": {
+      "commands": [
+        "npm ci --omit=dev"
+      ]
+    }
+  },
   "deploy": {
     "startCommand": "npm run start:production"
   }

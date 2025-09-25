@@ -1,8 +1,16 @@
 const SQLiteManager = require('./databaseManager');
 const PostgreSQLManager = require('./PostgresManager');
 
+// Singleton instance
+let sharedInstance = null;
+
 class DatabaseFactory {
     static create() {
+        // Return the shared instance if it already exists
+        if (sharedInstance) {
+            return sharedInstance;
+        }
+        
         const databaseUrl = process.env.DATABASE_URL;
         const environment = process.env.NODE_ENV || 'development';
         
@@ -16,11 +24,13 @@ class DatabaseFactory {
         
         if (databaseUrl && databaseUrl.includes('postgres')) {
             console.log('🐘 Using PostgreSQL database');
-            return new PostgreSQLManager(databaseUrl);
+            sharedInstance = new PostgreSQLManager(databaseUrl);
         } else {
             console.log('🗂️  Using SQLite for development environment');
-            return SQLiteManager;
+            sharedInstance = SQLiteManager;
         }
+        
+        return sharedInstance;
     }
 }
 

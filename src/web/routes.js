@@ -279,6 +279,167 @@ router.post('/api/calls/:callId/transfer', async (req, res) => {
     }
 });
 
+// Dynamic knowledge base endpoint for ElevenLabs with real database data
+router.get('/knowledge-base', async (req, res) => {
+    try {
+        // Get all users with their data
+        const users = await new Promise((resolve, reject) => {
+            databaseManager.db.all(
+                `SELECT * FROM users ORDER BY registeredAt DESC`,
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+
+        // Get officers data
+        const officers = await new Promise((resolve, reject) => {
+            databaseManager.db.all(
+                `SELECT * FROM officers`,
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+
+        // Get loan applications for all users
+        const loanApplications = await new Promise((resolve, reject) => {
+            databaseManager.db.all(
+                `SELECT la.*, u.name as user_name, u.phoneNumber as user_phone 
+                 FROM loan_applications la 
+                 JOIN users u ON la.userId = u.id 
+                 ORDER BY la.appliedAt DESC`,
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+
+        // Get recent transactions for all users
+        const recentTransactions = await new Promise((resolve, reject) => {
+            databaseManager.db.all(
+                `SELECT t.*, u.name as user_name, u.phoneNumber as user_phone 
+                 FROM transactions t 
+                 JOIN users u ON t.userId = u.id 
+                 ORDER BY t.transactionDate DESC LIMIT 50`,
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+
+        // Create comprehensive knowledge base content
+        const knowledgeBase = `# Infobip Capital Banking - Live Customer Database
+
+## Company Information
+**Company:** Infobip Capital  
+**Industry:** Digital Banking & Financial Services  
+**Demo System:** AI-Powered Voice Banking Assistant  
+**Last Updated:** ${new Date().toISOString()}
+
+## Customer Accounts Database
+
+${users.map(user => {
+    const userLoanApps = loanApplications.filter(loan => loan.userId === user.id);
+    const userTransactions = recentTransactions.filter(tx => tx.userId === user.id).slice(0, 5);
+    
+    return `### Customer: ${user.name}
+**Phone:** ${user.phoneNumber}  
+**Company:** ${user.companyName}  
+**Account Number:** ${user.fakeAccountNumber}  
+**Current Balance:** $${parseFloat(user.fakeAccountBalance).toLocaleString('en-US', { minimumFractionDigits: 2 })}  
+**Registered:** ${new Date(user.registeredAt).toLocaleDateString()}  
+**Total Calls Made:** ${user.callCount || 0}  
+**Last Call:** ${user.lastCallAt ? new Date(user.lastCallAt).toLocaleDateString() : 'Never'}  
+**Fraud Flag:** ${user.fraudScenario ? 'YES - REQUIRES IMMEDIATE AGENT TRANSFER' : 'No'}  
+
+**Loan Applications:**
+${userLoanApps.length > 0 ? userLoanApps.map(loan => 
+    `- ${loan.loanType}: $${parseFloat(loan.loanAmount).toLocaleString('en-US')} - Status: ${loan.status}
+  Next Step: ${loan.nextStep}
+  Assigned Officer: ${loan.assignedOfficer}
+  Applied: ${new Date(loan.appliedAt).toLocaleDateString()}`
+).join('\n') : '- No active loan applications'}
+
+**Recent Transaction History:**
+${userTransactions.length > 0 ? userTransactions.map(tx => 
+    `- ${new Date(tx.transactionDate).toLocaleDateString()}: ${tx.description} - $${Math.abs(parseFloat(tx.amount)).toFixed(2)} ${tx.transactionType === 'credit' ? '(Credit)' : '(Debit)'} [${tx.category}]`
+).join('\n') : '- No recent transactions'}
+
+---
+`;
+}).join('\n')}
+
+## Bank Officers & Specialists
+
+${officers.map(officer => 
+    `### ${officer.name} - ${officer.department}
+**Specialization:** ${officer.specialization}  
+**Phone:** ${officer.phoneNumber}  
+**Email:** ${officer.email}  
+`
+).join('\n')}
+
+## Service Instructions
+
+### Balance Inquiries
+- Always provide the exact current balance from the database
+- Include account number for verification
+- Mention any recent significant transactions if relevant
+
+### Loan Status Updates
+- Provide current status from loan_applications table
+- Include next steps and assigned officer information
+- Give realistic timelines based on status
+
+### Fraud Prevention Protocol
+**CRITICAL:** If customer has fraud_scenario = true, immediately:
+1. Acknowledge their concern professionally
+2. Inform them you're transferring to our fraud specialist
+3. DO NOT discuss account details over the phone
+4. Transfer to Sarah Johnson in Fraud Prevention (+15553728321)
+
+### Transaction Inquiries
+- Reference specific transactions from the database
+- Provide merchant names, amounts, and dates
+- Categorize spending patterns when helpful
+
+### Account Activation
+- Verify customer identity with phone number and name
+- Confirm company name matches registration
+- Guide through activation steps
+
+### General Customer Service
+- Always use customer's name once verified
+- Be professional, helpful, and efficient
+- Escalate complex issues to appropriate specialists
+- Update call statistics in database when possible
+
+## Demo Scenarios Available
+1. **Balance Inquiry** - Check current account balance
+2. **Loan Status Check** - Review loan application progress  
+3. **Fraud Alert & Agent Transfer** - Handle fraud reports with immediate escalation
+4. **Transaction History** - Review recent account activity
+5. **Account Activation** - Activate new customer accounts
+6. **General Banking Support** - Handle various banking questions
+
+---
+*This knowledge base is dynamically generated from live database at ${new Date().toISOString()}*`;
+
+        // Return as plain text for ElevenLabs
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.send(knowledgeBase);
+        
+    } catch (error) {
+        console.error('Knowledge base generation error:', error);
+        res.status(500).json({ error: 'Failed to generate knowledge base' });
+    }
+});
+
 router.get('/api/scenarios', (req, res) => {
     const scenarios = [
         {

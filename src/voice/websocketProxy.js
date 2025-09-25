@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const http = require('http');
 const fetch = require('node-fetch');
+const callsHandler = require('./callsHandler');
 
 class WebSocketProxy {
     constructor() {
@@ -46,6 +47,27 @@ class WebSocketProxy {
             userContext: null
         });
 
+        // 🎯 NEW: Try to get user context from active calls
+        // We'll look for the most recent active call to associate with this WebSocket
+        const activeCalls = callsHandler.getActiveCalls();
+        if (activeCalls.length > 0) {
+            // Get the most recent call (likely the one that just connected)
+            const recentCall = activeCalls[activeCalls.length - 1];
+            const callSession = callsHandler.getCallSession(recentCall.callId);
+            if (callSession?.userContext) {
+                userContext = callSession.userContext;
+                console.log(`🎯 [${connectionId}] Found user context for: ${userContext.name || 'Unknown User'}`);
+                
+                // Update connection with user context
+                const connection = this.activeConnections.get(connectionId);
+                if (connection) {
+                    connection.userContext = userContext;
+                }
+            } else {
+                console.log(`⚠️  [${connectionId}] No user context found in active calls`);
+            }
+        }
+
         infobipWs.on('error', (error) => {
             console.error(`❌ Infobip WebSocket error for ${connectionId}:`, error);
         });
@@ -89,11 +111,13 @@ class WebSocketProxy {
                 elevenLabsWs.on('open', () => {
                     console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
 
-                    // Send initial configuration (simplified to match tutorial)
+                    // 🎯 NEW: Send personalized configuration based on user context
                     const initialConfig = {
-                        type: 'conversation_initiation_client_data'
+                        type: 'conversation_initiation_client_data',
+                        conversation_config_override: this.buildPersonalizedConfig(connectionId, userContext)
                     };
 
+                    console.log(`📤 [${connectionId}] Sending personalized config to ElevenLabs`);
                     elevenLabsWs.send(JSON.stringify(initialConfig));
                 });
 
@@ -211,7 +235,93 @@ class WebSocketProxy {
     }
 
     /**
-     * Build conversation configuration based on user context
+     * Build personalized configuration for ElevenLabs based on user context
+     * @param {string} connectionId - Connection identifier
+     * @param {object} userContext - User's fintech data (can be null)
+     * @returns {object} - ElevenLabs conversation configuration
+     */
+    buildPersonalizedConfig(connectionId, userContext) {
+        if (!userContext) {
+            // Default configuration for unidentified callers
+            return {
+                agent: {
+                    prompt: {
+                        prompt: `You are a professional voice assistant for Infobip Capital, an AI-powered banking service. 
+                        
+                        The caller hasn't been identified yet. Politely ask for their name and phone number to look up their account. 
+                        If they're new, offer to help them register for our demo.
+                        
+                        Always be helpful, professional, and secure in all interactions.`,
+                        llm: "gpt-4o-mini"
+                    },
+                    first_message: "Hello! Welcome to Infobip Capital. I'm your AI banking assistant. May I have your name and the phone number on your account so I can assist you better?",
+                    language: "en"
+                }
+            };
+        }
+
+        if (userContext.scenario === 'voice_registration') {
+            // Configuration for unregistered users doing voice registration
+            return {
+                agent: {
+                    prompt: {
+                        prompt: `You are a helpful voice assistant for Infobip Capital. 
+                        
+                        The caller hasn't registered for our demo yet. Help them register by collecting:
+                        - Their name
+                        - Their company name  
+                        - Their desired demo account balance
+                        
+                        Be friendly and guide them through the process step by step.
+                        Once you have all the information, confirm the details and thank them.`,
+                        llm: "gpt-4o-mini"
+                    },
+                    first_message: "Hello! It looks like you haven't registered for our demo yet. I'd be happy to help you register over the phone. Could you start by telling me your name?",
+                    language: "en"
+                }
+            };
+        }
+
+        // 🎯 PERSONALIZED configuration for registered users
+        const balance = parseFloat(userContext.fakeAccountBalance || 0).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        });
+
+        const personalizedPrompt = `You are a professional voice assistant for Infobip Capital.
+        
+        CALLER INFORMATION:
+        - Name: ${userContext.name}
+        - Company: ${userContext.companyName}
+        - Account Number: ${userContext.fakeAccountNumber}
+        - Current Balance: ${balance}
+        ${userContext.loanApplicationStatus && userContext.loanApplicationStatus !== 'None' ? 
+            `- Loan Application Status: ${userContext.loanApplicationStatus}` : ''}
+        ${userContext.fraudScenario ? 
+            '- FRAUD ALERT ENABLED: If they mention fraud or suspicious activity, immediately offer to transfer to our fraud prevention team.' : ''}
+        
+        You can help them with:
+        - Account balance inquiries (you know their balance is ${balance})
+        - Loan application status${userContext.loanApplicationStatus !== 'None' ? ' (status: ' + userContext.loanApplicationStatus + ')' : ''}
+        - Account activation and general banking questions
+        - Fraud reporting (transfer to live agents immediately)
+        
+        Always greet them by name, be professional, secure, and helpful. Use the specific account information provided above.`;
+
+        return {
+            agent: {
+                prompt: {
+                    prompt: personalizedPrompt,
+                    llm: "gpt-4o-mini"
+                },
+                first_message: `Hello ${userContext.name}! Welcome back to Infobip Capital. I can see your account is active with a current balance of ${balance}. How can I help you today?`,
+                language: "en"
+            }
+        };
+    }
+
+    /**
+     * Build conversation configuration based on user context (keeping for compatibility)
      * @param {object} userContext - User's fintech data
      * @returns {object} - Conversation configuration
      */

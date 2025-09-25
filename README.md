@@ -1,6 +1,13 @@
 # Infobip Capital - AI Voice Banking Demo
 
-An interactive fintech demo showcasing Infobip's Voice API with OpenAI for Dev Days NYC 2025. Experience the future of banking with AI-powered voice assistance.
+> **🎉 STATUS: FULLY OPERATIONAL** - Complete end-to-end voice banking with personalized greetings, real-time balance access, and dynamic database integration!
+
+An interactive fintech demo showcasing Infobip's Voice API with ElevenLabs Conversational AI for Dev Days NYC 2025. Experience the future of banking with AI-powered voice assistance.
+
+## 📞 Live Demo
+- **Registration**: https://victorious-friendship-production-39d6.up.railway.app  
+- **Call Number**: +1 650 718 5356
+- **Experience**: "Hello [Your Name]! Thank you for calling Infobip Capital. Your current account balance is $X,XXX.XX. How can I help you today?"
 
 ## 🏦 Overview
 

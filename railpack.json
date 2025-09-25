@@ -1,9 +1,11 @@
 {
   "$schema": "https://schema.railpack.com",
-  "_comment": "Updated to use npm install instead of npm ci",
+  "_comment": "Updated to use npm install with proper directory handling",
   "steps": {
     "install": {
       "commands": [
+        "ls -la",
+        "pwd",
         "npm install --omit=dev"
       ]
     }

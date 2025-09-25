@@ -1,5 +1,6 @@
 {
   "$schema": "https://schema.railpack.com",
+  "_comment": "Updated to use npm install instead of npm ci",
   "steps": {
     "install": {
       "commands": [

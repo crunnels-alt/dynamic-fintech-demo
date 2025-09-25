@@ -1,16 +1,17 @@
 {
   "$schema": "https://schema.railpack.com",
-  "_comment": "Updated to use npm install with proper directory handling",
+  "_comment": "Simplified approach to find and use package.json",
   "steps": {
     "install": {
       "commands": [
-        "ls -la",
         "pwd",
-        "npm install --omit=dev"
+        "ls -la",
+        "test -f package.json && npm install --omit=dev || echo 'package.json not found in current directory'",
+        "test -f /app/package.json && cd /app && npm install --omit=dev || echo 'package.json not found in /app'"
       ]
     }
   },
   "deploy": {
-    "startCommand": "npm run start:production"
+    "startCommand": "test -f package.json && npm run start:production || (cd /app && npm run start:production)"
   }
 }

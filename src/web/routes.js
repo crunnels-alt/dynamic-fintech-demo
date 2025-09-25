@@ -282,55 +282,84 @@ router.post('/api/calls/:callId/transfer', async (req, res) => {
 // Dynamic knowledge base endpoint for ElevenLabs with real database data
 router.get('/knowledge-base', async (req, res) => {
     try {
-        // Get all users with their data
-        const users = await new Promise((resolve, reject) => {
-            databaseManager.db.all(
-                `SELECT * FROM users ORDER BY registeredAt DESC`,
-                (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows || []);
-                }
-            );
-        });
+        let users, officers, loanApplications, recentTransactions;
 
-        // Get officers data
-        const officers = await new Promise((resolve, reject) => {
-            databaseManager.db.all(
-                `SELECT * FROM officers`,
-                (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows || []);
-                }
+        // Check if we're using PostgreSQL or SQLite
+        if (databaseManager.pool) {
+            // PostgreSQL queries
+            const usersResult = await databaseManager.pool.query(
+                'SELECT * FROM users ORDER BY registered_at DESC'
             );
-        });
+            users = usersResult.rows;
 
-        // Get loan applications for all users
-        const loanApplications = await new Promise((resolve, reject) => {
-            databaseManager.db.all(
-                `SELECT la.*, u.name as user_name, u.phoneNumber as user_phone 
-                 FROM loan_applications la 
-                 JOIN users u ON la.userId = u.id 
-                 ORDER BY la.appliedAt DESC`,
-                (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows || []);
-                }
+            const officersResult = await databaseManager.pool.query(
+                'SELECT * FROM officers'
             );
-        });
+            officers = officersResult.rows;
 
-        // Get recent transactions for all users
-        const recentTransactions = await new Promise((resolve, reject) => {
-            databaseManager.db.all(
-                `SELECT t.*, u.name as user_name, u.phoneNumber as user_phone 
-                 FROM transactions t 
-                 JOIN users u ON t.userId = u.id 
-                 ORDER BY t.transactionDate DESC LIMIT 50`,
-                (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows || []);
-                }
-            );
-        });
+            const loanAppsResult = await databaseManager.pool.query(`
+                SELECT la.*, u.name as user_name, u.phone_number as user_phone 
+                FROM loan_applications la 
+                JOIN users u ON la.user_id = u.id 
+                ORDER BY la.applied_at DESC
+            `);
+            loanApplications = loanAppsResult.rows;
+
+            const transactionsResult = await databaseManager.pool.query(`
+                SELECT t.*, u.name as user_name, u.phone_number as user_phone 
+                FROM transactions t 
+                JOIN users u ON t.user_id = u.id 
+                ORDER BY t.transaction_date DESC LIMIT 50
+            `);
+            recentTransactions = transactionsResult.rows;
+        } else {
+            // SQLite queries
+            users = await new Promise((resolve, reject) => {
+                databaseManager.db.all(
+                    `SELECT * FROM users ORDER BY registeredAt DESC`,
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows || []);
+                    }
+                );
+            });
+
+            officers = await new Promise((resolve, reject) => {
+                databaseManager.db.all(
+                    `SELECT * FROM officers`,
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows || []);
+                    }
+                );
+            });
+
+            loanApplications = await new Promise((resolve, reject) => {
+                databaseManager.db.all(
+                    `SELECT la.*, u.name as user_name, u.phoneNumber as user_phone 
+                     FROM loan_applications la 
+                     JOIN users u ON la.userId = u.id 
+                     ORDER BY la.appliedAt DESC`,
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows || []);
+                    }
+                );
+            });
+
+            recentTransactions = await new Promise((resolve, reject) => {
+                databaseManager.db.all(
+                    `SELECT t.*, u.name as user_name, u.phoneNumber as user_phone 
+                     FROM transactions t 
+                     JOIN users u ON t.userId = u.id 
+                     ORDER BY t.transactionDate DESC LIMIT 50`,
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows || []);
+                    }
+                );
+            });
+        }
 
         // Create comprehensive knowledge base content
         const knowledgeBase = `# Infobip Capital Banking - Live Customer Database
@@ -344,31 +373,54 @@ router.get('/knowledge-base', async (req, res) => {
 ## Customer Accounts Database
 
 ${users.map(user => {
-    const userLoanApps = loanApplications.filter(loan => loan.userId === user.id);
-    const userTransactions = recentTransactions.filter(tx => tx.userId === user.id).slice(0, 5);
+    const userLoanApps = loanApplications.filter(loan => 
+        (loan.userId === user.id) || (loan.user_id === user.id)
+    );
+    const userTransactions = recentTransactions.filter(tx => 
+        (tx.userId === user.id) || (tx.user_id === user.id)
+    ).slice(0, 5);
+    
+    // Handle both PostgreSQL (snake_case) and SQLite (camelCase) field names
+    const phone = user.phone_number || user.phoneNumber;
+    const company = user.company_name || user.companyName;
+    const accountNumber = user.fake_account_number || user.fakeAccountNumber;
+    const balance = user.fake_account_balance || user.fakeAccountBalance;
+    const registered = user.registered_at || user.registeredAt;
+    const callCount = user.call_count || user.callCount || 0;
+    const lastCall = user.last_call_at || user.lastCallAt;
+    const fraudFlag = user.fraud_scenario || user.fraudScenario;
     
     return `### Customer: ${user.name}
-**Phone:** ${user.phoneNumber}  
-**Company:** ${user.companyName}  
-**Account Number:** ${user.fakeAccountNumber}  
-**Current Balance:** $${parseFloat(user.fakeAccountBalance).toLocaleString('en-US', { minimumFractionDigits: 2 })}  
-**Registered:** ${new Date(user.registeredAt).toLocaleDateString()}  
-**Total Calls Made:** ${user.callCount || 0}  
-**Last Call:** ${user.lastCallAt ? new Date(user.lastCallAt).toLocaleDateString() : 'Never'}  
-**Fraud Flag:** ${user.fraudScenario ? 'YES - REQUIRES IMMEDIATE AGENT TRANSFER' : 'No'}  
+**Phone:** ${phone}  
+**Company:** ${company}  
+**Account Number:** ${accountNumber}  
+**Current Balance:** $${parseFloat(balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}  
+**Registered:** ${new Date(registered).toLocaleDateString()}  
+**Total Calls Made:** ${callCount}  
+**Last Call:** ${lastCall ? new Date(lastCall).toLocaleDateString() : 'Never'}  
+**Fraud Flag:** ${fraudFlag ? 'YES - REQUIRES IMMEDIATE AGENT TRANSFER' : 'No'}  
 
 **Loan Applications:**
-${userLoanApps.length > 0 ? userLoanApps.map(loan => 
-    `- ${loan.loanType}: $${parseFloat(loan.loanAmount).toLocaleString('en-US')} - Status: ${loan.status}
-  Next Step: ${loan.nextStep}
-  Assigned Officer: ${loan.assignedOfficer}
-  Applied: ${new Date(loan.appliedAt).toLocaleDateString()}`
-).join('\n') : '- No active loan applications'}
+${userLoanApps.length > 0 ? userLoanApps.map(loan => {
+    const loanType = loan.loan_type || loan.loanType;
+    const loanAmount = loan.loan_amount || loan.loanAmount;
+    const nextStep = loan.next_step || loan.nextStep;
+    const assignedOfficer = loan.assigned_officer || loan.assignedOfficer;
+    const appliedAt = loan.applied_at || loan.appliedAt;
+    
+    return `- ${loanType}: $${parseFloat(loanAmount).toLocaleString('en-US')} - Status: ${loan.status}
+  Next Step: ${nextStep}
+  Assigned Officer: ${assignedOfficer}
+  Applied: ${new Date(appliedAt).toLocaleDateString()}`;
+}).join('\n') : '- No active loan applications'}
 
 **Recent Transaction History:**
-${userTransactions.length > 0 ? userTransactions.map(tx => 
-    `- ${new Date(tx.transactionDate).toLocaleDateString()}: ${tx.description} - $${Math.abs(parseFloat(tx.amount)).toFixed(2)} ${tx.transactionType === 'credit' ? '(Credit)' : '(Debit)'} [${tx.category}]`
-).join('\n') : '- No recent transactions'}
+${userTransactions.length > 0 ? userTransactions.map(tx => {
+    const transactionDate = tx.transaction_date || tx.transactionDate;
+    const transactionType = tx.transaction_type || tx.transactionType;
+    
+    return `- ${new Date(transactionDate).toLocaleDateString()}: ${tx.description} - $${Math.abs(parseFloat(tx.amount)).toFixed(2)} ${transactionType === 'credit' ? '(Credit)' : '(Debit)'} [${tx.category}]`;
+}).join('\n') : '- No recent transactions'}
 
 ---
 `;
@@ -376,13 +428,15 @@ ${userTransactions.length > 0 ? userTransactions.map(tx =>
 
 ## Bank Officers & Specialists
 
-${officers.map(officer => 
-    `### ${officer.name} - ${officer.department}
+${officers.map(officer => {
+    const phoneNumber = officer.phone_number || officer.phoneNumber;
+    
+    return `### ${officer.name} - ${officer.department}
 **Specialization:** ${officer.specialization}  
-**Phone:** ${officer.phoneNumber}  
+**Phone:** ${phoneNumber}  
 **Email:** ${officer.email}  
-`
-).join('\n')}
+`;
+}).join('\n')}
 
 ## Service Instructions
 

@@ -128,7 +128,7 @@ class WebSocketProxy {
                 elevenLabsWs.on('message', (data) => {
                     try {
                         const message = JSON.parse(data);
-                        this.handleElevenLabsMessage(connectionId, message, infobipWs);
+                        this.handleElevenLabsMessage(connectionId, message, infobipWs, elevenLabsWs);
                     } catch (error) {
                         console.error(`❌ [${connectionId}] Error parsing ElevenLabs message:`, error);
                     }
@@ -183,7 +183,7 @@ class WebSocketProxy {
         });
     }
 
-    handleElevenLabsMessage(connectionId, message, infobipWs) {
+    handleElevenLabsMessage(connectionId, message, infobipWs, elevenLabsWs) {
         switch (message.type) {
             case 'conversation_initiation_metadata':
                 console.log(`🤖 [${connectionId}] Conversation initialized`);
@@ -208,7 +208,7 @@ class WebSocketProxy {
             case 'ping':
                 // Respond to ping events
                 if (message.ping_event?.event_id) {
-                    if (elevenLabsWs) {
+                    if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
                         elevenLabsWs.send(JSON.stringify({
                             type: 'pong',
                             event_id: message.ping_event.event_id,

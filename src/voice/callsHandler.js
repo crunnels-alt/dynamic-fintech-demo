@@ -126,17 +126,11 @@ class CallsHandler {
                         type: 'WEBSOCKET',
                         websocketEndpointConfigId: this.mediaStreamConfigId
                     }
-                },
-                // Pass user context as metadata that can be accessed by the WebSocket handler
-                metadata: {
-                    userContext: JSON.stringify(userContext),
-                    scenario: 'fintech_banking',
-                    timestamp: new Date().toISOString()
                 }
             });
 
             const dialogData = response.data;
-            console.log(`✅ Created dialog with ID ${dialogData.id} for ${userContext.name}`);
+            console.log(`✅ Created dialog with ID ${dialogData.id}`);
             
             // Update call session with dialog info
             const callSession = this.activeCalls.get(callId);
@@ -187,11 +181,6 @@ class CallsHandler {
                         type: 'WEBSOCKET',
                         websocketEndpointConfigId: this.mediaStreamConfigId
                     }
-                },
-                metadata: {
-                    userContext: JSON.stringify(unregisteredContext),
-                    scenario: 'voice_registration',
-                    timestamp: new Date().toISOString()
                 }
             });
 

@@ -89,11 +89,9 @@ class WebSocketProxy {
                 elevenLabsWs.on('open', () => {
                     console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
 
-                    // Send initial configuration
+                    // Send initial configuration (simplified to match tutorial)
                     const initialConfig = {
-                        type: 'conversation_initiation_client_data',
-                        // You can add custom instructions here based on user context
-                        conversation_config: userContext ? this.buildConversationConfig(userContext) : this.getDefaultConfig()
+                        type: 'conversation_initiation_client_data'
                     };
 
                     elevenLabsWs.send(JSON.stringify(initialConfig));
@@ -128,30 +126,11 @@ class WebSocketProxy {
         infobipWs.on('message', (message) => {
             try {
                 if (typeof message === 'string') {
-                    // JSON event from Infobip - might contain metadata
-                    try {
-                        const jsonMessage = JSON.parse(message);
-                        if (jsonMessage.metadata && jsonMessage.metadata.userContext) {
-                            // Extract user context from metadata
-                            userContext = JSON.parse(jsonMessage.metadata.userContext);
-                            const connection = this.activeConnections.get(connectionId);
-                            if (connection) {
-                                connection.userContext = userContext;
-                            }
-                            console.log(`👤 [${connectionId}] Received user context for ${userContext.name}`);
-                            
-                            // Update ElevenLabs with personalized context
-                            if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
-                                this.updateElevenLabsContext(elevenLabsWs, userContext);
-                            }
-                        }
-                    } catch (e) {
-                        // Not JSON, ignore
-                    }
+                    // JSON event from Infobip - ignore for now (following tutorial approach)
                     return;
                 }
 
-                // Binary audio data from Infobip
+                // Binary audio data from Infobip - forward to ElevenLabs
                 if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
                     const audioMessage = {
                         user_audio_chunk: Buffer.from(message).toString('base64'),
@@ -201,9 +180,8 @@ class WebSocketProxy {
             case 'ping':
                 // Respond to ping events
                 if (message.ping_event?.event_id) {
-                    const connection = this.activeConnections.get(connectionId);
-                    if (connection?.elevenLabsWs) {
-                        connection.elevenLabsWs.send(JSON.stringify({
+                    if (elevenLabsWs) {
+                        elevenLabsWs.send(JSON.stringify({
                             type: 'pong',
                             event_id: message.ping_event.event_id,
                         }));

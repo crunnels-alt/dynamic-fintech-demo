@@ -231,7 +231,8 @@ router.post('/webhook/voice', async (req, res) => {
     try {
         const event = req.body;
         console.log('📞 Received Infobip Voice event:', event.type, event.callId);
-        
+        console.log('🔍 Full webhook payload:', JSON.stringify(event, null, 2));
+
         switch (event.type) {
             case 'CALL_RECEIVED':
                 await callsHandler.handleCallReceived(event);

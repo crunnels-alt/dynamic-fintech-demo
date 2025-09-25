@@ -29,7 +29,7 @@ class CallsHandler {
     async handleCallReceived(event) {
         try {
             const callId = event.callId;
-            const callerId = event.from; // Phone number of the caller
+            const callerId = event.properties?.call?.from; // Phone number of the caller
             
             console.log(`📞 Received call ${callId} from ${callerId}`);
             

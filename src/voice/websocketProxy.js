@@ -113,44 +113,49 @@ class WebSocketProxy {
 
                     let initialConfig;
                     
-                    if (userContext && userContext.name) {
+                    if (userContext && userContext.name && userContext.name !== 'New Caller') {
                         console.log(`🎯 [${connectionId}] User context found: ${userContext.name} (${userContext.companyName})`);
                         console.log(`💰 [${connectionId}] Account balance: $${userContext.fakeAccountBalance}`);
                         
-                        // Send personalized user data to ElevenLabs
+                        // Format balance for display
                         const balance = parseFloat(userContext.fakeAccountBalance || 0).toLocaleString('en-US', {
                             style: 'currency',
                             currency: 'USD'
                         });
                         
+                        // Use ElevenLabs dynamic variables for personalization
                         initialConfig = {
                             type: 'conversation_initiation_client_data',
-                            client_data: {
-                                user_name: userContext.name,
+                            dynamic_variables: {
+                                customer_name: userContext.name,
                                 company_name: userContext.companyName,
                                 account_number: userContext.fakeAccountNumber,
                                 current_balance: balance,
                                 phone_number: userContext.phoneNumber,
                                 loan_status: userContext.loanApplicationStatus || 'None',
-                                fraud_flag: userContext.fraudScenario || false,
-                                call_verification: {
-                                    verified_by_phone: true,
-                                    verified_by_name: true,
-                                    security_check_complete: true
-                                },
-                                context: `Verified customer ${userContext.name} from ${userContext.companyName}. Account ${userContext.fakeAccountNumber} has current balance of ${balance}. ${userContext.loanApplicationStatus && userContext.loanApplicationStatus !== 'None' ? `Loan application status: ${userContext.loanApplicationStatus}.` : ''} ${userContext.fraudScenario ? 'FRAUD ALERT: This account has fraud monitoring enabled.' : ''}`
+                                is_fraud_flagged: userContext.fraudScenario || false,
+                                verification_complete: true
+                            },
+                            conversation_config_override: {
+                                agent: {
+                                    first_message: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
+                                }
                             }
                         };
                         
-                        console.log(`📤 [${connectionId}] Sending personalized user data to ElevenLabs`);
+                        console.log(`📤 [${connectionId}] Sending personalized greeting for ${userContext.name} with balance ${balance}`);
                     } else {
                         // Basic config for unidentified users
                         initialConfig = {
                             type: 'conversation_initiation_client_data',
-                            client_data: {
-                                user_name: 'New Caller',
-                                verification_status: 'pending',
-                                context: 'Unidentified caller - needs phone number and name verification to proceed.'
+                            dynamic_variables: {
+                                customer_name: 'New Caller',
+                                verification_complete: false
+                            },
+                            conversation_config_override: {
+                                agent: {
+                                    first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
+                                }
                             }
                         };
                         

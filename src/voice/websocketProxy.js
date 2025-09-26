@@ -122,7 +122,7 @@ class WebSocketProxy {
 
                     conversationData = {
                         type: "conversation_initiation_client_data",
-                        dynamic_variables: {
+                        dynamicVariables: {
                             customer_name: userContext.name,
                             company_name: userContext.companyName,
                             account_number: userContext.fakeAccountNumber,
@@ -132,9 +132,9 @@ class WebSocketProxy {
                             is_fraud_flagged: userContext.fraudScenario || false,
                             verification_complete: true
                         },
-                        conversation_config_override: {
+                        overrides: {
                             agent: {
-                                first_message: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
+                                firstMessage: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
                             }
                         }
                     };
@@ -144,13 +144,13 @@ class WebSocketProxy {
                 } else {
                     conversationData = {
                         type: "conversation_initiation_client_data",
-                        dynamic_variables: {
+                        dynamicVariables: {
                             customer_name: 'New Caller',
                             verification_complete: false
                         },
-                        conversation_config_override: {
+                        overrides: {
                             agent: {
-                                first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
+                                firstMessage: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
                             }
                         }
                     };
@@ -198,7 +198,7 @@ class WebSocketProxy {
                         
                         // Fixed format based on ElevenLabs documentation
                         initialConfig = {
-                            dynamic_variables: {
+                            dynamicVariables: {
                                 customer_name: userContext.name,
                                 company_name: userContext.companyName,
                                 account_number: userContext.fakeAccountNumber,
@@ -220,7 +220,7 @@ class WebSocketProxy {
                     } else {
                         // Fixed format for unidentified users
                         initialConfig = {
-                            dynamic_variables: {
+                            dynamicVariables: {
                                 customer_name: 'New Caller',
                                 verification_complete: false
                             },

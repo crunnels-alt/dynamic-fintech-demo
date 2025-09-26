@@ -95,8 +95,13 @@ class WebSocketProxy {
                 console.log(`✅ [${connectionId}] Got signed URL successfully`);
                 return data.signed_url;
             } catch (error) {
-                console.error(`❌ [${connectionId}] Error getting ElevenLabs signed URL:`, error);
-                throw error;
+                console.error(`❌ [${connectionId}] Error getting ElevenLabs signed URL:`, error.message);
+                console.error(`❌ [${connectionId}] Error code:`, error.code);
+                console.error(`❌ [${connectionId}] Error stack:`, error.stack);
+
+                // Don't throw - this crashes the webhook and causes 502 errors
+                // Instead return null so we can handle it gracefully
+                return null;
             }
         };
 
@@ -152,6 +157,13 @@ class WebSocketProxy {
                 }
 
                 const signedUrl = await getSignedUrl();
+
+                if (!signedUrl) {
+                    console.error(`❌ [${connectionId}] Could not get signed URL from ElevenLabs - aborting connection`);
+                    console.log(`📞 [${connectionId}] Call will continue without ElevenLabs (fallback mode)`);
+                    return; // Exit gracefully without crashing
+                }
+
                 elevenLabsWs = new WebSocket(signedUrl);
 
                 // Update connection tracking

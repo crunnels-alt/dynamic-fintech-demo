@@ -217,7 +217,7 @@ class WebSocketProxy {
 
                         const testConversationData = {
                             type: "conversation_initiation_client_data",
-                            dynamicVariables: {
+                            dynamic_variables: {
                                 customer_name: userContext.name,
                                 company_name: userContext.companyName,
                                 account_number: userContext.fakeAccountNumber,

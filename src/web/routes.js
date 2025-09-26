@@ -14,6 +14,38 @@ router.get('/test', (req, res) => {
     res.json({ message: 'Test endpoint working' });
 });
 
+// Debug endpoint to test phone number lookup
+router.get('/debug-phone/:phoneNumber', async (req, res) => {
+    try {
+        const callsHandler = require('../voice/callsHandler.js');
+        const PhoneNumberUtils = require('../utils/phoneUtils');
+
+        const rawPhone = req.params.phoneNumber;
+        console.log(`🔍 DEBUG API - Raw phone: "${rawPhone}"`);
+
+        const standardizedPhone = PhoneNumberUtils.standardizeNorthAmerican(rawPhone);
+        console.log(`🔍 DEBUG API - Standardized: "${standardizedPhone}"`);
+
+        const userContext = await callsHandler.identifyCallerAndGetContext(rawPhone);
+        console.log(`🔍 DEBUG API - User context:`, userContext ? `Found ${userContext.name}` : 'Not found');
+
+        res.json({
+            rawPhone,
+            standardizedPhone,
+            userFound: !!userContext,
+            userData: userContext ? {
+                name: userContext.name,
+                company: userContext.companyName,
+                phone: userContext.phoneNumber,
+                balance: userContext.fakeAccountBalance
+            } : null
+        });
+    } catch (error) {
+        console.error('Debug phone lookup error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Serve the registration form
 router.get('/', (req, res) => {
     res.sendFile('index.html', { root: './public' });

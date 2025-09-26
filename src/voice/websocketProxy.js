@@ -51,6 +51,7 @@ class WebSocketProxy {
                 loanApplicationStatus: "Under Review",
                 fraudScenario: false
             };
+            console.log(`🔧 [${connectionId}] HARDCODED context set: ${userContext.name}, balance: $${userContext.fakeAccountBalance}`);
         }
 
         // Store connection info
@@ -204,6 +205,39 @@ class WebSocketProxy {
 
                 elevenLabsWs.on('open', () => {
                     console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
+
+                    // TESTING: If we already have hardcoded context, send it immediately
+                    if (userContext && userContext.name === "Connor Runnels") {
+                        console.log(`🚀 [${connectionId}] TESTING: Sending hardcoded conversation data immediately`);
+
+                        const balance = parseFloat(userContext.fakeAccountBalance || 0).toLocaleString('en-US', {
+                            style: 'currency',
+                            currency: 'USD'
+                        });
+
+                        const testConversationData = {
+                            type: "conversation_initiation_client_data",
+                            dynamicVariables: {
+                                customer_name: userContext.name,
+                                company_name: userContext.companyName,
+                                account_number: userContext.fakeAccountNumber,
+                                current_balance: balance,
+                                phone_number: userContext.phoneNumber,
+                                loan_status: userContext.loanApplicationStatus || 'None',
+                                is_fraud_flagged: userContext.fraudScenario || false,
+                                verification_complete: true
+                            },
+                            overrides: {
+                                agent: {
+                                    firstMessage: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
+                                }
+                            }
+                        };
+
+                        console.log(`🔧 [${connectionId}] TEST conversation data:`, JSON.stringify(testConversationData, null, 2));
+                        elevenLabsWs.send(JSON.stringify(testConversationData));
+                        return; // Skip the retry logic
+                    }
 
                     // Try multiple times to get user context as call session may not be ready immediately
                     const tryGetUserContext = async (attempt = 1, maxAttempts = 3) => {

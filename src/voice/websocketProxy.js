@@ -140,6 +140,7 @@ class WebSocketProxy {
                         };
                         
                         console.log(`📤 [${connectionId}] Sending personalized greeting for ${userContext.name} with balance ${balance}`);
+                        console.log(`🔍 [${connectionId}] Full config being sent:`, JSON.stringify(initialConfig, null, 2));
                     } else {
                         // TEMPORARY: Basic config without overrides for unidentified users
                         initialConfig = {

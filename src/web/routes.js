@@ -79,12 +79,14 @@ router.post('/elevenlabs-webhook', async (req, res) => {
 
         if (userContext && userContext.name && userContext.name !== 'New Caller') {
             console.log(`🎯 ElevenLabs webhook - Found user: ${userContext.name}`);
+            console.log(`💰 ElevenLabs webhook - Raw balance: "${userContext.fakeAccountBalance}"`);
 
             // Format balance for display
             const balance = parseFloat(userContext.fakeAccountBalance || 0).toLocaleString('en-US', {
                 style: 'currency',
                 currency: 'USD'
             });
+            console.log(`💰 ElevenLabs webhook - Formatted balance: "${balance}"`);
 
             const responseData = {
                 type: "conversation_initiation_client_data",

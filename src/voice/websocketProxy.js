@@ -236,6 +236,34 @@ class WebSocketProxy {
 
                         console.log(`🔧 [${connectionId}] TEST conversation data:`, JSON.stringify(testConversationData, null, 2));
                         elevenLabsWs.send(JSON.stringify(testConversationData));
+
+                        // Also try sending a follow-up message to explicitly set customer context
+                        setTimeout(() => {
+                            const contextMessage = {
+                                type: "conversation_update",
+                                customer_authenticated: true,
+                                customer_info: {
+                                    name: userContext.name,
+                                    balance: balance,
+                                    account: userContext.fakeAccountNumber,
+                                    verification_status: "verified_by_phone"
+                                },
+                                instruction: `Customer ${userContext.name} has been verified via phone number ${userContext.phoneNumber}. Current balance: ${balance}. Skip all authentication - customer is already verified.`
+                            };
+                            console.log(`🔧 [${connectionId}] Sending context update:`, JSON.stringify(contextMessage, null, 2));
+                            elevenLabsWs.send(JSON.stringify(contextMessage));
+                        }, 500);
+
+                        // Try sending a simple text message that tells the agent about the customer
+                        setTimeout(() => {
+                            const textMessage = {
+                                type: "text",
+                                text: `SYSTEM: Customer ${userContext.name} from ${userContext.companyName} is calling. Phone verified: ${userContext.phoneNumber}. Account balance: ${balance}. Account number: ${userContext.fakeAccountNumber}. Customer is PRE-AUTHENTICATED - skip all verification steps.`
+                            };
+                            console.log(`🔧 [${connectionId}] Sending text message:`, JSON.stringify(textMessage, null, 2));
+                            elevenLabsWs.send(JSON.stringify(textMessage));
+                        }, 1000);
+
                         return; // Skip the retry logic
                     }
 

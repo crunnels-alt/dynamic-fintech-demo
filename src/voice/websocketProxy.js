@@ -72,29 +72,30 @@ class WebSocketProxy {
             console.error(`❌ Infobip WebSocket error for ${connectionId}:`, error);
         });
 
-        // Get signed URL for ElevenLabs connection with conversation initialization data
-        const getSignedUrl = async (conversationData) => {
+        // Get signed URL for ElevenLabs connection
+        const getSignedUrl = async () => {
             try {
+                console.log(`🔗 [${connectionId}] Getting ElevenLabs signed URL...`);
                 const response = await fetch(
                     `https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${this.elevenLabsAgentId}`,
                     {
-                        method: 'POST',
+                        method: 'GET',
                         headers: {
                             'xi-api-key': this.elevenLabsApiKey,
-                            'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify(conversationData)
                     }
                 );
 
                 if (!response.ok) {
+                    console.error(`❌ [${connectionId}] Signed URL request failed: ${response.status} ${response.statusText}`);
                     throw new Error(`Failed to get signed URL: ${response.statusText}`);
                 }
 
                 const data = await response.json();
+                console.log(`✅ [${connectionId}] Got signed URL successfully`);
                 return data.signed_url;
             } catch (error) {
-                console.error('❌ Error getting ElevenLabs signed URL:', error);
+                console.error(`❌ [${connectionId}] Error getting ElevenLabs signed URL:`, error);
                 throw error;
             }
         };
@@ -150,7 +151,7 @@ class WebSocketProxy {
                     console.log(`📤 [${connectionId}] Sending basic config for unidentified caller`);
                 }
 
-                const signedUrl = await getSignedUrl(conversationData);
+                const signedUrl = await getSignedUrl();
                 elevenLabsWs = new WebSocket(signedUrl);
 
                 // Update connection tracking
@@ -161,7 +162,9 @@ class WebSocketProxy {
 
                 elevenLabsWs.on('open', () => {
                     console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
-                    // Conversation data already sent with signed URL request
+                    console.log(`📤 [${connectionId}] Sending conversation initiation data...`);
+                    console.log(`🔍 [${connectionId}] Sending data:`, JSON.stringify(conversationData, null, 2));
+                    elevenLabsWs.send(JSON.stringify(conversationData));
                     
                     if (userContext && userContext.name && userContext.name !== 'New Caller') {
                         console.log(`🎯 [${connectionId}] User context found: ${userContext.name} (${userContext.companyName})`);

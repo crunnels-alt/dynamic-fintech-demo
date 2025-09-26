@@ -218,8 +218,24 @@ class PostgreSQLFinTechManager {
             'SELECT * FROM users WHERE phone_number = $1',
             [phoneNumber]
         );
-        
-        return result.rows[0] || null;
+
+        const user = result.rows[0];
+        if (!user) return null;
+
+        // Map PostgreSQL field names to camelCase for compatibility
+        return {
+            id: user.id,
+            phoneNumber: user.phone_number,
+            name: user.name,
+            companyName: user.company_name,
+            fakeAccountBalance: user.fake_account_balance,
+            fakeAccountNumber: user.fake_account_number,
+            loanApplicationStatus: user.loan_application_status,
+            fraudScenario: user.fraud_scenario,
+            registeredAt: user.registered_at,
+            lastCallAt: user.last_call_at,
+            callCount: user.call_count || 0
+        };
     }
 
     // Get user's loan applications

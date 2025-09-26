@@ -121,6 +121,7 @@ class WebSocketProxy {
                     });
 
                     conversationData = {
+                        type: "conversation_initiation_client_data",
                         dynamic_variables: {
                             customer_name: userContext.name,
                             company_name: userContext.companyName,
@@ -142,6 +143,7 @@ class WebSocketProxy {
                     console.log(`🔍 [${connectionId}] Full config being sent:`, JSON.stringify(conversationData, null, 2));
                 } else {
                     conversationData = {
+                        type: "conversation_initiation_client_data",
                         dynamic_variables: {
                             customer_name: 'New Caller',
                             verification_complete: false
@@ -174,22 +176,14 @@ class WebSocketProxy {
 
                 elevenLabsWs.on('open', () => {
                     console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
-
-                    // TEMPORARY: Test with minimal data to avoid format errors
-                    const testConfig = {
-                        dynamic_variables: {
-                            customer_name: userContext?.name || 'New Caller'
-                        }
-                    };
-
-                    console.log(`📤 [${connectionId}] Sending minimal test config...`);
-                    console.log(`🔍 [${connectionId}] Test config:`, JSON.stringify(testConfig, null, 2));
+                    console.log(`📤 [${connectionId}] Sending conversation initiation data...`);
+                    console.log(`🔍 [${connectionId}] Full config:`, JSON.stringify(conversationData, null, 2));
 
                     try {
-                        elevenLabsWs.send(JSON.stringify(testConfig));
-                        console.log(`✅ [${connectionId}] Successfully sent config to ElevenLabs`);
+                        elevenLabsWs.send(JSON.stringify(conversationData));
+                        console.log(`✅ [${connectionId}] Successfully sent conversation data to ElevenLabs`);
                     } catch (error) {
-                        console.error(`❌ [${connectionId}] Error sending config:`, error);
+                        console.error(`❌ [${connectionId}] Error sending conversation data:`, error);
                     }
                     
                     if (userContext && userContext.name && userContext.name !== 'New Caller') {

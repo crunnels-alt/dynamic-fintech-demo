@@ -176,61 +176,15 @@ class WebSocketProxy {
 
                 elevenLabsWs.on('open', () => {
                     console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
-                    console.log(`⏳ [${connectionId}] NOT sending conversation data - testing bare connection`);
-                    console.log(`🔍 [${connectionId}] Conversation data prepared but not sent:`, JSON.stringify(conversationData, null, 2));
 
-                    // TESTING: Don't send conversation data immediately
-                    // Maybe ElevenLabs expects a different flow or timing
-                    console.log(`📱 [${connectionId}] Waiting for ElevenLabs to send first message...`);
-                });
-                    
-                    if (userContext && userContext.name && userContext.name !== 'New Caller') {
-                        console.log(`🎯 [${connectionId}] User context found: ${userContext.name} (${userContext.companyName})`);
-                        console.log(`💰 [${connectionId}] Account balance: $${userContext.fakeAccountBalance}`);
-                        
-                        // Format balance for display
-                        const balance = parseFloat(userContext.fakeAccountBalance || 0).toLocaleString('en-US', {
-                            style: 'currency',
-                            currency: 'USD'
-                        });
-                        
-                        // Fixed format based on ElevenLabs documentation
-                        initialConfig = {
-                            dynamicVariables: {
-                                customer_name: userContext.name,
-                                company_name: userContext.companyName,
-                                account_number: userContext.fakeAccountNumber,
-                                current_balance: balance,
-                                phone_number: userContext.phoneNumber,
-                                loan_status: userContext.loanApplicationStatus || 'None',
-                                is_fraud_flagged: userContext.fraudScenario || false,
-                                verification_complete: true
-                            },
-                            conversation_config_override: {
-                                agent: {
-                                    first_message: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
-                                }
-                            }
-                        };
-                        
-                        console.log(`📤 [${connectionId}] Sending personalized greeting for ${userContext.name} with balance ${balance}`);
-                        console.log(`🔍 [${connectionId}] Full config being sent:`, JSON.stringify(initialConfig, null, 2));
+                    if (conversationData) {
+                        console.log(`📤 [${connectionId}] Sending conversation initiation data`);
+                        console.log(`🔍 [${connectionId}] Data being sent:`, JSON.stringify(conversationData, null, 2));
+                        elevenLabsWs.send(JSON.stringify(conversationData));
                     } else {
-                        // Fixed format for unidentified users
-                        initialConfig = {
-                            dynamicVariables: {
-                                customer_name: 'New Caller',
-                                verification_complete: false
-                            },
-                            conversation_config_override: {
-                                agent: {
-                                    first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
-                                }
-                            }
-                        };
-                        
-                        console.log(`📤 [${connectionId}] Sending basic config for unidentified caller`);
+                        console.log(`📱 [${connectionId}] No conversation data to send - agent should start with default greeting`);
                     }
+                });
 
                 elevenLabsWs.on('message', (data) => {
                     try {

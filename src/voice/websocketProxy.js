@@ -72,16 +72,18 @@ class WebSocketProxy {
             console.error(`❌ Infobip WebSocket error for ${connectionId}:`, error);
         });
 
-        // Get signed URL for ElevenLabs connection
-        const getSignedUrl = async () => {
+        // Get signed URL for ElevenLabs connection with conversation initialization data
+        const getSignedUrl = async (conversationData) => {
             try {
                 const response = await fetch(
                     `https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${this.elevenLabsAgentId}`,
                     {
-                        method: 'GET',
+                        method: 'POST',
                         headers: {
                             'xi-api-key': this.elevenLabsApiKey,
+                            'Content-Type': 'application/json',
                         },
+                        body: JSON.stringify(conversationData)
                     }
                 );
 
@@ -99,7 +101,56 @@ class WebSocketProxy {
 
         const setupElevenLabs = async () => {
             try {
-                const signedUrl = await getSignedUrl();
+                // Prepare conversation initialization data BEFORE getting signed URL
+                let conversationData;
+
+                if (userContext && userContext.name && userContext.name !== 'New Caller') {
+                    console.log(`🎯 [${connectionId}] User context found: ${userContext.name} (${userContext.companyName})`);
+                    console.log(`💰 [${connectionId}] Account balance: $${userContext.fakeAccountBalance}`);
+
+                    // Format balance for display
+                    const balance = parseFloat(userContext.fakeAccountBalance || 0).toLocaleString('en-US', {
+                        style: 'currency',
+                        currency: 'USD'
+                    });
+
+                    conversationData = {
+                        dynamic_variables: {
+                            customer_name: userContext.name,
+                            company_name: userContext.companyName,
+                            account_number: userContext.fakeAccountNumber,
+                            current_balance: balance,
+                            phone_number: userContext.phoneNumber,
+                            loan_status: userContext.loanApplicationStatus || 'None',
+                            is_fraud_flagged: userContext.fraudScenario || false,
+                            verification_complete: true
+                        },
+                        conversation_config_override: {
+                            agent: {
+                                first_message: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
+                            }
+                        }
+                    };
+
+                    console.log(`📤 [${connectionId}] Sending personalized greeting for ${userContext.name} with balance ${balance}`);
+                    console.log(`🔍 [${connectionId}] Full config being sent:`, JSON.stringify(conversationData, null, 2));
+                } else {
+                    conversationData = {
+                        dynamic_variables: {
+                            customer_name: 'New Caller',
+                            verification_complete: false
+                        },
+                        conversation_config_override: {
+                            agent: {
+                                first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
+                            }
+                        }
+                    };
+
+                    console.log(`📤 [${connectionId}] Sending basic config for unidentified caller`);
+                }
+
+                const signedUrl = await getSignedUrl(conversationData);
                 elevenLabsWs = new WebSocket(signedUrl);
 
                 // Update connection tracking
@@ -110,8 +161,7 @@ class WebSocketProxy {
 
                 elevenLabsWs.on('open', () => {
                     console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
-
-                    let initialConfig;
+                    // Conversation data already sent with signed URL request
                     
                     if (userContext && userContext.name && userContext.name !== 'New Caller') {
                         console.log(`🎯 [${connectionId}] User context found: ${userContext.name} (${userContext.companyName})`);
@@ -160,8 +210,6 @@ class WebSocketProxy {
                         
                         console.log(`📤 [${connectionId}] Sending basic config for unidentified caller`);
                     }
-                    
-                    elevenLabsWs.send(JSON.stringify(initialConfig));
                 });
 
                 elevenLabsWs.on('message', (data) => {

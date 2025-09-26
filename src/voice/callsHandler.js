@@ -106,23 +106,20 @@ class CallsHandler {
                 return null;
             }
 
-            // Get additional user data for context with error handling
+            // Get additional user data for context - simplified to avoid timeout issues
             let loanApplications = [];
             let recentTransactions = [];
 
             try {
-                [loanApplications, recentTransactions] = await Promise.all([
-                    databaseManager.getUserLoanApplications(user.id).catch(err => {
-                        console.log(`⚠️ Failed to get loan applications for user ${user.id}:`, err.message);
-                        return [];
-                    }),
-                    databaseManager.getUserTransactions(user.id, 3).catch(err => {
-                        console.log(`⚠️ Failed to get transactions for user ${user.id}:`, err.message);
-                        return [];
-                    })
-                ]);
+                loanApplications = await databaseManager.getUserLoanApplications(user.id) || [];
             } catch (error) {
-                console.log(`⚠️ Error getting additional user data:`, error.message);
+                console.log(`⚠️ Failed to get loan applications:`, error.message);
+            }
+
+            try {
+                recentTransactions = await databaseManager.getUserTransactions(user.id, 3) || [];
+            } catch (error) {
+                console.log(`⚠️ Failed to get transactions:`, error.message);
             }
 
             return {

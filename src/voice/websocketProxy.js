@@ -50,22 +50,36 @@ class WebSocketProxy {
         // 🎯 NEW: Try to get user context from active calls
         // We'll look for the most recent active call to associate with this WebSocket
         const activeCalls = callsHandler.getActiveCalls();
+        console.log(`🔍 [${connectionId}] Active calls count:`, activeCalls.length);
+        console.log(`🔍 [${connectionId}] Active calls:`, activeCalls.map(call => ({callId: call.callId, userName: call.userName})));
+
         if (activeCalls.length > 0) {
             // Get the most recent call (likely the one that just connected)
             const recentCall = activeCalls[activeCalls.length - 1];
+            console.log(`🔍 [${connectionId}] Using recent call:`, recentCall.callId, 'for user:', recentCall.userName);
+
             const callSession = callsHandler.getCallSession(recentCall.callId);
+            console.log(`🔍 [${connectionId}] Call session:`, callSession ? 'FOUND' : 'NOT FOUND');
+
             if (callSession?.userContext) {
                 userContext = callSession.userContext;
                 console.log(`🎯 [${connectionId}] Found user context for: ${userContext.name || 'Unknown User'}`);
-                
+                console.log(`🔍 [${connectionId}] User details:`, {
+                    name: userContext.name,
+                    company: userContext.companyName,
+                    balance: userContext.fakeAccountBalance
+                });
+
                 // Update connection with user context
                 const connection = this.activeConnections.get(connectionId);
                 if (connection) {
                     connection.userContext = userContext;
                 }
             } else {
-                console.log(`⚠️  [${connectionId}] No user context found in active calls`);
+                console.log(`⚠️  [${connectionId}] No user context found in call session`);
             }
+        } else {
+            console.log(`⚠️  [${connectionId}] No active calls found`);
         }
 
         infobipWs.on('error', (error) => {

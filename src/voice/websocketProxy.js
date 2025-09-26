@@ -176,15 +176,13 @@ class WebSocketProxy {
 
                 elevenLabsWs.on('open', () => {
                     console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
-                    console.log(`📤 [${connectionId}] Sending conversation initiation data...`);
-                    console.log(`🔍 [${connectionId}] Full config:`, JSON.stringify(conversationData, null, 2));
+                    console.log(`⏳ [${connectionId}] NOT sending conversation data - testing bare connection`);
+                    console.log(`🔍 [${connectionId}] Conversation data prepared but not sent:`, JSON.stringify(conversationData, null, 2));
 
-                    try {
-                        elevenLabsWs.send(JSON.stringify(conversationData));
-                        console.log(`✅ [${connectionId}] Successfully sent conversation data to ElevenLabs`);
-                    } catch (error) {
-                        console.error(`❌ [${connectionId}] Error sending conversation data:`, error);
-                    }
+                    // TESTING: Don't send conversation data immediately
+                    // Maybe ElevenLabs expects a different flow or timing
+                    console.log(`📱 [${connectionId}] Waiting for ElevenLabs to send first message...`);
+                });
                     
                     if (userContext && userContext.name && userContext.name !== 'New Caller') {
                         console.log(`🎯 [${connectionId}] User context found: ${userContext.name} (${userContext.companyName})`);

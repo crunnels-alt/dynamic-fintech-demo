@@ -116,6 +116,8 @@ class CallsHandler {
                 ...user,
                 loanApplications,
                 recentTransactions,
+                // Ensure phoneNumber field is properly set
+                phoneNumber: user.phoneNumber || user.phone_number || standardizedPhone,
                 // Add some contextual information for the AI
                 lastCallDate: user.lastCallAt ? new Date(user.lastCallAt).toLocaleDateString() : 'First call',
                 callCount: user.callCount + 1

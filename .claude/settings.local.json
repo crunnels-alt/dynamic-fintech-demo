@@ -11,7 +11,8 @@
       "Bash(git push:*)",
       "Bash(node:*)",
       "Bash(echo:*)",
-      "Bash(railway status:*)"
+      "Bash(railway status:*)",
+      "WebFetch(domain:elevenlabs.io)"
     ],
     "deny": [],
     "ask": []

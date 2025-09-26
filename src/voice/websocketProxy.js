@@ -231,7 +231,6 @@ class WebSocketProxy {
                         
                         console.log(`📤 [${connectionId}] Sending basic config for unidentified caller`);
                     }
-                });
 
                 elevenLabsWs.on('message', (data) => {
                     try {

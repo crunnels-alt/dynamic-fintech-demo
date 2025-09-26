@@ -46,6 +46,91 @@ router.get('/debug-phone/:phoneNumber', async (req, res) => {
     }
 });
 
+// ElevenLabs webhook endpoint for conversation_initiation_client_data
+router.post('/elevenlabs-webhook', async (req, res) => {
+    try {
+        console.log('🔔 ElevenLabs webhook called:', JSON.stringify(req.body, null, 2));
+
+        // Extract phone number from the webhook payload
+        // This might be in different places depending on how ElevenLabs sends it
+        const phoneNumber = req.body.caller_id || req.body.phone_number || req.body.from;
+
+        if (!phoneNumber) {
+            console.log('⚠️ No phone number found in ElevenLabs webhook');
+            return res.json({
+                type: "conversation_initiation_client_data",
+                dynamic_variables: {
+                    customer_name: 'New Caller',
+                    verification_complete: false
+                },
+                conversation_config_override: {
+                    agent: {
+                        first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
+                    }
+                }
+            });
+        }
+
+        console.log(`🔍 ElevenLabs webhook - Looking up phone: ${phoneNumber}`);
+
+        // Look up user context
+        const callsHandler = require('../voice/callsHandler.js');
+        const userContext = await callsHandler.identifyCallerAndGetContext(phoneNumber);
+
+        if (userContext && userContext.name && userContext.name !== 'New Caller') {
+            console.log(`🎯 ElevenLabs webhook - Found user: ${userContext.name}`);
+
+            // Format balance for display
+            const balance = parseFloat(userContext.fakeAccountBalance || 0).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+            });
+
+            const responseData = {
+                type: "conversation_initiation_client_data",
+                dynamic_variables: {
+                    customer_name: userContext.name,
+                    company_name: userContext.companyName,
+                    account_number: userContext.fakeAccountNumber,
+                    current_balance: balance,
+                    phone_number: userContext.phoneNumber,
+                    loan_status: userContext.loanApplicationStatus || 'None',
+                    is_fraud_flagged: userContext.fraudScenario || false,
+                    verification_complete: true
+                },
+                conversation_config_override: {
+                    agent: {
+                        first_message: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
+                    }
+                }
+            };
+
+            console.log(`📤 ElevenLabs webhook - Sending personalized data:`, JSON.stringify(responseData, null, 2));
+            return res.json(responseData);
+
+        } else {
+            console.log(`📋 ElevenLabs webhook - No user found for phone: ${phoneNumber}`);
+
+            return res.json({
+                type: "conversation_initiation_client_data",
+                dynamic_variables: {
+                    customer_name: 'New Caller',
+                    verification_complete: false
+                },
+                conversation_config_override: {
+                    agent: {
+                        first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
+                    }
+                }
+            });
+        }
+
+    } catch (error) {
+        console.error('❌ ElevenLabs webhook error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // Serve the registration form
 router.get('/', (req, res) => {
     res.sendFile('index.html', { root: './public' });

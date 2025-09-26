@@ -30,8 +30,9 @@ class CallsHandler {
         try {
             const callId = event.callId;
             const callerId = event.properties?.call?.from; // Phone number of the caller
-            
+
             console.log(`📞 Received call ${callId} from ${callerId}`);
+            console.log(`🔍 WEBHOOK - callerId type: ${typeof callerId}, value: "${callerId}"`);
             
             // Identify the caller by their phone number
             const userContext = await this.identifyCallerAndGetContext(callerId);
@@ -73,19 +74,35 @@ class CallsHandler {
      */
     async identifyCallerAndGetContext(callerId) {
         try {
+            console.log(`🔍 RAW caller ID from Infobip: "${callerId}"`);
+
             // Standardize the phone number format
             const standardizedPhone = PhoneNumberUtils.standardizeNorthAmerican(callerId);
-            
+            console.log(`🔍 STANDARDIZED phone: "${standardizedPhone}"`);
+
             if (!standardizedPhone) {
                 console.log(`⚠️  Could not standardize phone number: ${callerId}`);
                 return null;
             }
 
             // Look up user in database
+            console.log(`🔍 SEARCHING database for phone: "${standardizedPhone}"`);
             const user = await databaseManager.getUserByPhone(standardizedPhone);
-            
+            console.log(`🔍 DATABASE RESULT:`, user ? `FOUND user: ${user.name} (${user.phoneNumber})` : 'NOT FOUND');
+
             if (!user) {
                 console.log(`📋 No user found for phone: ${standardizedPhone}`);
+
+                // Debug: Let's also check what phone numbers ARE in the database
+                console.log(`🔍 DEBUG: Checking first 5 phone numbers in database...`);
+                try {
+                    const allUsers = await databaseManager.getAllUsers ? await databaseManager.getAllUsers() : [];
+                    const phoneNumbers = allUsers.slice(0, 5).map(u => u.phoneNumber);
+                    console.log(`🔍 DEBUG: Sample phone numbers in DB:`, phoneNumbers);
+                } catch (debugError) {
+                    console.log(`🔍 DEBUG: Could not fetch sample users:`, debugError.message);
+                }
+
                 return null;
             }
 

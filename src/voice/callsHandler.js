@@ -54,11 +54,28 @@ class CallsHandler {
             });
 
             // Create dialog connecting the call to our WebSocket endpoint
-            await this.createDialogWithAI(callId, userContext);
+            try {
+                await this.createDialogWithAI(callId, userContext);
+                console.log(`✅ Created dialog for call ${callId}`);
+            } catch (dialogError) {
+                console.error(`❌ Failed to create dialog for call ${callId}:`, dialogError);
+                throw dialogError; // Re-throw as this is critical
+            }
             
-            // Update call statistics in database
-            await databaseManager.updateUserCallStats(userContext.phoneNumber);
-            await databaseManager.logCall(userContext.phoneNumber, 'ai_conversation', null, true);
+            // Update call statistics in database with error handling
+            try {
+                await databaseManager.updateUserCallStats(userContext.phoneNumber);
+                console.log(`✅ Updated call stats for ${userContext.phoneNumber}`);
+            } catch (error) {
+                console.log(`⚠️ Failed to update call stats:`, error.message);
+            }
+
+            try {
+                await databaseManager.logCall(userContext.phoneNumber, 'ai_conversation', null, true);
+                console.log(`✅ Logged call for ${userContext.phoneNumber}`);
+            } catch (error) {
+                console.log(`⚠️ Failed to log call:`, error.message);
+            }
 
         } catch (error) {
             console.error('❌ Error handling call received:', error);

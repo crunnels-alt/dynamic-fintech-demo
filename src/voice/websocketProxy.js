@@ -191,13 +191,72 @@ class WebSocketProxy {
                 elevenLabsWs.on('open', () => {
                     console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
 
-                    if (conversationData) {
-                        console.log(`📤 [${connectionId}] Sending conversation initiation data`);
-                        console.log(`🔍 [${connectionId}] Data being sent:`, JSON.stringify(conversationData, null, 2));
-                        elevenLabsWs.send(JSON.stringify(conversationData));
-                    } else {
-                        console.log(`📱 [${connectionId}] No conversation data to send - agent should start with default greeting`);
-                    }
+                    // Give a moment for call session to be established, then try to get user context again
+                    setTimeout(async () => {
+                        console.log(`🔄 [${connectionId}] Re-checking for user context after delay...`);
+
+                        // Try to get user context again
+                        const activeCalls = callsHandler.getActiveCalls();
+                        console.log(`🔍 [${connectionId}] Active calls after delay:`, activeCalls.length);
+
+                        let finalUserContext = userContext;
+                        if (!finalUserContext && activeCalls.length > 0) {
+                            const recentCall = activeCalls[activeCalls.length - 1];
+                            const callSession = callsHandler.getCallSession(recentCall.callId);
+                            if (callSession?.userContext) {
+                                finalUserContext = callSession.userContext;
+                                console.log(`🎯 [${connectionId}] Found user context on retry: ${finalUserContext.name}`);
+                            }
+                        }
+
+                        // Rebuild conversation data with updated context
+                        let finalConversationData;
+                        if (finalUserContext && finalUserContext.name && finalUserContext.name !== 'New Caller') {
+                            const balance = parseFloat(finalUserContext.fakeAccountBalance || 0).toLocaleString('en-US', {
+                                style: 'currency',
+                                currency: 'USD'
+                            });
+
+                            finalConversationData = {
+                                type: "conversation_initiation_client_data",
+                                dynamicVariables: {
+                                    customer_name: finalUserContext.name,
+                                    company_name: finalUserContext.companyName,
+                                    account_number: finalUserContext.fakeAccountNumber,
+                                    current_balance: balance,
+                                    phone_number: finalUserContext.phoneNumber,
+                                    loan_status: finalUserContext.loanApplicationStatus || 'None',
+                                    is_fraud_flagged: finalUserContext.fraudScenario || false,
+                                    verification_complete: true
+                                },
+                                overrides: {
+                                    agent: {
+                                        firstMessage: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
+                                    }
+                                }
+                            };
+                            console.log(`📤 [${connectionId}] Sending PERSONALIZED conversation data for ${finalUserContext.name}`);
+                        } else {
+                            finalConversationData = {
+                                type: "conversation_initiation_client_data",
+                                dynamicVariables: {
+                                    customer_name: 'New Caller',
+                                    verification_complete: false
+                                },
+                                overrides: {
+                                    agent: {
+                                        firstMessage: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
+                                    }
+                                }
+                            };
+                            console.log(`📤 [${connectionId}] Sending GENERIC conversation data - no user context found`);
+                        }
+
+                        if (finalConversationData) {
+                            console.log(`🔍 [${connectionId}] Final data being sent:`, JSON.stringify(finalConversationData, null, 2));
+                            elevenLabsWs.send(JSON.stringify(finalConversationData));
+                        }
+                    }, 1000); // Wait 1 second for call session to be established
                 });
 
                 elevenLabsWs.on('message', (data) => {

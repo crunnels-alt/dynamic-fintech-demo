@@ -162,9 +162,23 @@ class WebSocketProxy {
 
                 elevenLabsWs.on('open', () => {
                     console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
-                    console.log(`📤 [${connectionId}] Sending conversation initiation data...`);
-                    console.log(`🔍 [${connectionId}] Sending data:`, JSON.stringify(conversationData, null, 2));
-                    elevenLabsWs.send(JSON.stringify(conversationData));
+
+                    // TEMPORARY: Test with minimal data to avoid format errors
+                    const testConfig = {
+                        dynamic_variables: {
+                            customer_name: userContext?.name || 'New Caller'
+                        }
+                    };
+
+                    console.log(`📤 [${connectionId}] Sending minimal test config...`);
+                    console.log(`🔍 [${connectionId}] Test config:`, JSON.stringify(testConfig, null, 2));
+
+                    try {
+                        elevenLabsWs.send(JSON.stringify(testConfig));
+                        console.log(`✅ [${connectionId}] Successfully sent config to ElevenLabs`);
+                    } catch (error) {
+                        console.error(`❌ [${connectionId}] Error sending config:`, error);
+                    }
                     
                     if (userContext && userContext.name && userContext.name !== 'New Caller') {
                         console.log(`🎯 [${connectionId}] User context found: ${userContext.name} (${userContext.companyName})`);
@@ -226,10 +240,14 @@ class WebSocketProxy {
 
                 elevenLabsWs.on('error', (error) => {
                     console.error(`❌ [${connectionId}] ElevenLabs WebSocket error:`, error);
+                    console.error(`❌ [${connectionId}] Error details:`, error.message);
                 });
 
-                elevenLabsWs.on('close', () => {
-                    console.log(`🤖 [${connectionId}] ElevenLabs disconnected`);
+                elevenLabsWs.on('close', (code, reason) => {
+                    console.log(`🤖 [${connectionId}] ElevenLabs disconnected - Code: ${code}, Reason: ${reason}`);
+                    if (code !== 1000) {
+                        console.error(`⚠️  [${connectionId}] Abnormal ElevenLabs disconnection`);
+                    }
                 });
 
             } catch (error) {

@@ -191,13 +191,13 @@ class WebSocketProxy {
                 elevenLabsWs.on('open', () => {
                     console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
 
-                    // Give a moment for call session to be established, then try to get user context again
-                    setTimeout(async () => {
-                        console.log(`🔄 [${connectionId}] Re-checking for user context after delay...`);
+                    // Try multiple times to get user context as call session may not be ready immediately
+                    const tryGetUserContext = async (attempt = 1, maxAttempts = 3) => {
+                        console.log(`🔄 [${connectionId}] Attempt ${attempt}/${maxAttempts} to find user context...`);
 
                         // Try to get user context again
                         const activeCalls = callsHandler.getActiveCalls();
-                        console.log(`🔍 [${connectionId}] Active calls after delay:`, activeCalls.length);
+                        console.log(`🔍 [${connectionId}] Active calls (attempt ${attempt}):`, activeCalls.length);
 
                         let finalUserContext = userContext;
                         if (!finalUserContext && activeCalls.length > 0) {
@@ -205,9 +205,22 @@ class WebSocketProxy {
                             const callSession = callsHandler.getCallSession(recentCall.callId);
                             if (callSession?.userContext) {
                                 finalUserContext = callSession.userContext;
-                                console.log(`🎯 [${connectionId}] Found user context on retry: ${finalUserContext.name}`);
+                                console.log(`🎯 [${connectionId}] Found user context on attempt ${attempt}: ${finalUserContext.name}`);
                             }
                         }
+
+                        if (finalUserContext || attempt >= maxAttempts) {
+                            return finalUserContext;
+                        }
+
+                        // Wait longer and try again
+                        console.log(`⏳ [${connectionId}] No user context yet, waiting ${attempt * 1000}ms before retry...`);
+                        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+                        return tryGetUserContext(attempt + 1, maxAttempts);
+                    };
+
+                    setTimeout(async () => {
+                        const finalUserContext = await tryGetUserContext();
 
                         // Rebuild conversation data with updated context
                         let finalConversationData;

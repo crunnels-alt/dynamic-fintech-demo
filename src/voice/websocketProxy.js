@@ -39,20 +39,8 @@ class WebSocketProxy {
         let elevenLabsWs = null;
         let userContext = null;
 
-        // TEMPORARY DEBUG: Hardcode user context for testing
-        if (connectionId.includes('conn_')) {
-            console.log(`🔧 [${connectionId}] TESTING: Using hardcoded Connor Runnels context`);
-            userContext = {
-                name: "Connor Runnels",
-                companyName: "Infobip",
-                fakeAccountNumber: "ACC591549317943",
-                fakeAccountBalance: "2500.00",
-                phoneNumber: "+19256401244",
-                loanApplicationStatus: "Under Review",
-                fraudScenario: false
-            };
-            console.log(`🔧 [${connectionId}] HARDCODED context set: ${userContext.name}, balance: $${userContext.fakeAccountBalance}`);
-        }
+        // Note: User context now comes from ElevenLabs webhook instead of hardcoded values
+        console.log(`📍 [${connectionId}] WebSocket connection established - ElevenLabs webhook will handle user context`);
 
         // Store connection info
         this.activeConnections.set(connectionId, {

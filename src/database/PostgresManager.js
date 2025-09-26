@@ -244,8 +244,18 @@ class PostgreSQLFinTechManager {
             'SELECT * FROM loan_applications WHERE user_id = $1',
             [userId]
         );
-        
-        return result.rows;
+
+        // Map PostgreSQL snake_case fields to camelCase
+        return result.rows.map(loan => ({
+            id: loan.id,
+            userId: loan.user_id,
+            loanType: loan.loan_type,
+            loanAmount: loan.loan_amount,
+            status: loan.status,
+            nextStep: loan.next_step,
+            assignedOfficer: loan.assigned_officer,
+            appliedAt: loan.applied_at
+        }));
     }
 
     // Get user's transactions
@@ -254,8 +264,19 @@ class PostgreSQLFinTechManager {
             'SELECT * FROM transactions WHERE user_id = $1 ORDER BY transaction_date DESC LIMIT $2',
             [userId, limit]
         );
-        
-        return result.rows;
+
+        // Map PostgreSQL snake_case fields to camelCase
+        return result.rows.map(transaction => ({
+            id: transaction.id,
+            userId: transaction.user_id,
+            transactionId: transaction.transaction_id,
+            description: transaction.description,
+            amount: transaction.amount,
+            transactionType: transaction.transaction_type,
+            merchant: transaction.merchant,
+            category: transaction.category,
+            transactionDate: transaction.transaction_date
+        }));
     }
 
     // Create a fake loan application
@@ -356,8 +377,19 @@ class PostgreSQLFinTechManager {
             'SELECT * FROM officers WHERE specialization = $1 ORDER BY RANDOM() LIMIT 1',
             [specialization]
         );
-        
-        return result.rows[0] || null;
+
+        const officer = result.rows[0];
+        if (!officer) return null;
+
+        // Map PostgreSQL snake_case fields to camelCase
+        return {
+            id: officer.id,
+            name: officer.name,
+            department: officer.department,
+            phoneNumber: officer.phone_number,
+            email: officer.email,
+            specialization: officer.specialization
+        };
     }
 
     // Close database connection

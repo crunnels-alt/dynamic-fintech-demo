@@ -154,7 +154,12 @@ class WebSocketProxy {
 
                     // Audio data from Infobip
                     audioPacketCount++;
-                    if (audioPacketCount === 1 || audioPacketCount % 50 === 0) {
+                    
+                    // Analyze audio to detect if it's silence or actual speech
+                    if (audioPacketCount === 1 || audioPacketCount === 50 || audioPacketCount === 100) {
+                        const audioLevel = this.analyzeAudioLevel(message);
+                        console.log(`[Infobip → ElevenLabs] Audio packet #${audioPacketCount} (${message.length} bytes) - Audio level: ${audioLevel}`);
+                    } else if (audioPacketCount % 100 === 0) {
                         console.log(`[Infobip → ElevenLabs] Audio packet #${audioPacketCount} (${message.length} bytes)`);
                     }
 
@@ -195,6 +200,27 @@ class WebSocketProxy {
 
     generateConnectionId() {
         return `conn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    analyzeAudioLevel(buffer) {
+        // Calculate RMS (Root Mean Square) of audio samples to detect speech
+        // PCM 16-bit samples range from -32768 to 32767
+        let sum = 0;
+        const samples = buffer.length / 2; // 16-bit = 2 bytes per sample
+        
+        for (let i = 0; i < buffer.length - 1; i += 2) {
+            const sample = buffer.readInt16LE(i);
+            sum += sample * sample;
+        }
+        
+        const rms = Math.sqrt(sum / samples);
+        const dbLevel = 20 * Math.log10(rms / 32768); // Convert to dB
+        
+        if (rms < 100) return 'SILENCE (near zero)';
+        if (rms < 500) return 'Very quiet';
+        if (rms < 2000) return 'Quiet speech';
+        if (rms < 5000) return 'Normal speech';
+        return 'Loud speech';
     }
 
     async getSignedUrl() {

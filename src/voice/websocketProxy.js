@@ -53,6 +53,18 @@ class WebSocketProxy {
                                 vad: {
                                     enabled: true,
                                     threshold: 0.5
+                                },
+                                audio: {
+                                    input: {
+                                        encoding: "pcm_16000",
+                                        sample_rate: 16000,
+                                        channels: 1
+                                    },
+                                    output: {
+                                        encoding: "pcm_16000",
+                                        sample_rate: 16000,
+                                        channels: 1
+                                    }
                                 }
                             }
                         };

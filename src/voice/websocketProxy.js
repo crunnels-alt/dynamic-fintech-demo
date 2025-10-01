@@ -183,7 +183,17 @@ class WebSocketProxy {
                     return; // Exit gracefully without crashing
                 }
 
-                elevenLabsWs = new WebSocket(signedUrl);
+                console.log(`🔗 [${connectionId}] Got signed URL, attempting WebSocket connection...`);
+                console.log(`🔍 [${connectionId}] WebSocket URL: ${signedUrl.substring(0, 50)}...`);
+
+                try {
+                    elevenLabsWs = new WebSocket(signedUrl);
+                    console.log(`✅ [${connectionId}] WebSocket object created, waiting for connection...`);
+                } catch (wsCreateError) {
+                    console.error(`❌ [${connectionId}] Failed to create WebSocket object:`, wsCreateError);
+                    console.error(`❌ [${connectionId}] WebSocket creation error details:`, wsCreateError.message);
+                    return;
+                }
 
                 // Update connection tracking
                 const connection = this.activeConnections.get(connectionId);
@@ -191,8 +201,23 @@ class WebSocketProxy {
                     connection.elevenLabsWs = elevenLabsWs;
                 }
 
+                // Add connection state monitoring
+                console.log(`⏳ [${connectionId}] WebSocket readyState: ${elevenLabsWs.readyState} (0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)`);
+
+                // Set up a timeout to detect if connection never happens
+                const connectionTimeout = setTimeout(() => {
+                    if (elevenLabsWs.readyState === WebSocket.CONNECTING) {
+                        console.error(`⏰ [${connectionId}] ❌ TIMEOUT: WebSocket still connecting after 10 seconds`);
+                        console.error(`⏰ [${connectionId}] This indicates network or ElevenLabs service issues`);
+                        console.error(`⏰ [${connectionId}] Current readyState: ${elevenLabsWs.readyState}`);
+                        elevenLabsWs.terminate(); // Force close the hanging connection
+                    }
+                }, 10000); // 10 second timeout
+
                 elevenLabsWs.on('open', () => {
-                    console.log(`🤖 [${connectionId}] Connected to ElevenLabs Conversational AI`);
+                    clearTimeout(connectionTimeout); // Clear timeout on successful connection
+                    console.log(`🤖 [${connectionId}] ✅ SUCCESSFULLY connected to ElevenLabs Conversational AI`);
+                    console.log(`✅ [${connectionId}] WebSocket readyState after open: ${elevenLabsWs.readyState}`);
 
                     // TESTING: If we already have hardcoded context, send it immediately
                     if (userContext && userContext.name === "Connor Runnels") {
@@ -346,14 +371,37 @@ class WebSocketProxy {
                 });
 
                 elevenLabsWs.on('error', (error) => {
-                    console.error(`❌ [${connectionId}] ElevenLabs WebSocket error:`, error);
-                    console.error(`❌ [${connectionId}] Error details:`, error.message);
+                    clearTimeout(connectionTimeout); // Clear timeout on error
+                    console.error(`❌ [${connectionId}] ElevenLabs WebSocket ERROR occurred:`, error);
+                    console.error(`❌ [${connectionId}] Error name:`, error.name);
+                    console.error(`❌ [${connectionId}] Error message:`, error.message);
+                    console.error(`❌ [${connectionId}] Error code:`, error.code);
+                    console.error(`❌ [${connectionId}] WebSocket readyState during error: ${elevenLabsWs.readyState}`);
+
+                    // If this is a connection error, it might explain why we never see 'open'
+                    if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') {
+                        console.error(`🚨 [${connectionId}] NETWORK CONNECTION ERROR: Cannot reach ElevenLabs servers`);
+                    }
                 });
 
                 elevenLabsWs.on('close', (code, reason) => {
-                    console.log(`🤖 [${connectionId}] ElevenLabs disconnected - Code: ${code}, Reason: ${reason}`);
+                    clearTimeout(connectionTimeout); // Clear timeout on close
+                    console.log(`🤖 [${connectionId}] ElevenLabs WebSocket CLOSED - Code: ${code}, Reason: ${reason}`);
+                    console.log(`📊 [${connectionId}] Close code meanings: 1000=Normal, 1001=GoingAway, 1002=ProtocolError, 1003=UnsupportedData, 1006=AbnormalClosure, 1011=ServerError`);
+
                     if (code !== 1000) {
-                        console.error(`⚠️  [${connectionId}] Abnormal ElevenLabs disconnection`);
+                        console.error(`⚠️  [${connectionId}] ❌ ABNORMAL ElevenLabs disconnection with code ${code}`);
+
+                        // Specific error code analysis
+                        if (code === 1006) {
+                            console.error(`🚨 [${connectionId}] Code 1006: Connection closed abnormally - likely network issue or server rejection`);
+                        } else if (code === 1002) {
+                            console.error(`🚨 [${connectionId}] Code 1002: Protocol error - possibly authentication or format issue`);
+                        } else if (code === 1011) {
+                            console.error(`🚨 [${connectionId}] Code 1011: Server error - ElevenLabs server issue`);
+                        }
+                    } else {
+                        console.log(`✅ [${connectionId}] Normal WebSocket closure`);
                     }
                 });
 

@@ -22,6 +22,7 @@ class WebSocketProxy {
             let elevenLabsReady = false;
             let audioPacketCount = 0;
             let audioSentCount = 0;
+            let audioBuffer = []; // Buffer to hold audio until ElevenLabs is ready
             
             console.log('[Bridge] Using ElevenLabs server-side VAD for speech detection');
 
@@ -80,6 +81,19 @@ class WebSocketProxy {
                                 case 'conversation_initiation_metadata':
                                     console.log('[ElevenLabs] Conversation initialized - READY FOR AUDIO');
                                     elevenLabsReady = true;
+                                    
+                                    // Send any buffered audio packets first
+                                    if (audioBuffer.length > 0) {
+                                        console.log(`[ElevenLabs] Sending ${audioBuffer.length} buffered audio packets...`);
+                                        audioBuffer.forEach(bufferedAudio => {
+                                            elevenLabsWs.send(JSON.stringify({
+                                                type: 'input_audio_buffer.append',
+                                                audio: bufferedAudio
+                                            }));
+                                        });
+                                        audioBuffer = []; // Clear buffer
+                                    }
+                                    
                                     // Trigger initial greeting
                                     console.log('[ElevenLabs] Triggering initial greeting...');
                                     elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
@@ -163,17 +177,22 @@ class WebSocketProxy {
                         console.log(`[Infobip → ElevenLabs] Audio packet #${audioPacketCount} (${message.length} bytes)`);
                     }
 
+                    const base64Audio = Buffer.from(message).toString('base64');
+                    
                     if (!elevenLabsReady) {
+                        // Buffer audio until ElevenLabs is ready
+                        audioBuffer.push(base64Audio);
                         if (audioPacketCount === 1) {
                             console.warn('[Infobip → ElevenLabs] ⚠️ ElevenLabs not ready yet, buffering audio...');
                         }
                         return;
                     }
 
+                    // Send audio continuously to ElevenLabs
                     if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                         elevenLabsWs.send(JSON.stringify({
                             type: 'input_audio_buffer.append',
-                            audio: Buffer.from(message).toString('base64')
+                            audio: base64Audio
                         }));
                         // ElevenLabs VAD will automatically detect speech and respond
                     } else {

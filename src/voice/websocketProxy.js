@@ -9,13 +9,16 @@ class WebSocketProxy {
         this.elevenLabsAgentId = process.env.ELEVENLABS_AGENT_ID;
         this.elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
         this.port = process.env.WS_PROXY_PORT || 3500;
-        
+
         this.server = http.createServer();
         this.wss = new WebSocket.Server({ server: this.server });
-        
+
         // Active connections tracking
         this.activeConnections = new Map();
-        
+
+        // Pre-established ElevenLabs connections ready for incoming calls
+        this.pendingElevenLabsConnections = new Map();
+
         this.setupWebSocketServer();
     }
 
@@ -36,12 +39,179 @@ class WebSocketProxy {
         return `conn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
 
+    /**
+     * Pre-establish ElevenLabs WebSocket connection for a call
+     * @param {string} callId - The call ID to associate with this connection
+     * @param {object} userContext - User context for personalization
+     * @returns {Promise<object>} - Object with WebSocket and signed URL
+     */
+    async prepareElevenLabsConnection(callId, userContext) {
+        console.log(`🚀 [${callId}] Pre-establishing ElevenLabs connection...`);
+
+        try {
+            const signedUrl = await this.getSignedUrl(callId);
+            if (!signedUrl) {
+                console.error(`❌ [${callId}] Could not get signed URL`);
+                return null;
+            }
+
+            const elevenLabsWs = new WebSocket(signedUrl);
+
+            // Wait for connection to open with timeout
+            const connectionPromise = new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('ElevenLabs connection timeout'));
+                }, 10000);
+
+                elevenLabsWs.on('open', () => {
+                    clearTimeout(timeout);
+                    console.log(`✅ [${callId}] ElevenLabs connection ready BEFORE dialog creation`);
+                    resolve();
+                });
+
+                elevenLabsWs.on('error', (error) => {
+                    clearTimeout(timeout);
+                    reject(error);
+                });
+            });
+
+            await connectionPromise;
+
+            // Store the ready connection
+            this.pendingElevenLabsConnections.set(callId, {
+                ws: elevenLabsWs,
+                userContext,
+                createdAt: Date.now()
+            });
+
+            console.log(`✅ [${callId}] ElevenLabs connection stored and ready for use`);
+            return { ws: elevenLabsWs, signedUrl };
+
+        } catch (error) {
+            console.error(`❌ [${callId}] Failed to prepare ElevenLabs connection:`, error.message);
+            return null;
+        }
+    }
+
+    /**
+     * Get signed URL for ElevenLabs connection
+     * @param {string} identifier - Call or connection identifier for logging
+     * @returns {Promise<string|null>} - Signed URL or null
+     */
+    async getSignedUrl(identifier) {
+        try {
+            console.log(`🔗 [${identifier}] Getting ElevenLabs signed URL...`);
+            const response = await fetch(
+                `https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${this.elevenLabsAgentId}`,
+                {
+                    method: 'GET',
+                    headers: {
+                        'xi-api-key': this.elevenLabsApiKey,
+                    },
+                }
+            );
+
+            if (!response.ok) {
+                console.error(`❌ [${identifier}] Signed URL request failed: ${response.status} ${response.statusText}`);
+                return null;
+            }
+
+            const data = await response.json();
+            console.log(`✅ [${identifier}] Got signed URL successfully`);
+            return data.signed_url;
+        } catch (error) {
+            console.error(`❌ [${identifier}] Error getting ElevenLabs signed URL:`, error.message);
+            return null;
+        }
+    }
+
+    /**
+     * Set up message handlers for ElevenLabs WebSocket
+     * @param {string} connectionId - Connection identifier
+     * @param {WebSocket} elevenLabsWs - ElevenLabs WebSocket
+     * @param {WebSocket} infobipWs - Infobip WebSocket
+     */
+    setupElevenLabsMessageHandlers(connectionId, elevenLabsWs, infobipWs) {
+        elevenLabsWs.on('message', (data) => {
+            try {
+                const message = JSON.parse(data);
+                this.handleElevenLabsMessage(connectionId, message, infobipWs, elevenLabsWs);
+            } catch (error) {
+                console.error(`❌ [${connectionId}] Error parsing ElevenLabs message:`, error);
+            }
+        });
+
+        elevenLabsWs.on('error', (error) => {
+            console.error(`❌ [${connectionId}] ElevenLabs WebSocket error:`, error.message);
+        });
+
+        elevenLabsWs.on('close', (code, reason) => {
+            console.log(`🤖 [${connectionId}] ElevenLabs WebSocket closed - Code: ${code}`);
+            if (code !== 1000) {
+                console.error(`⚠️  [${connectionId}] Abnormal ElevenLabs disconnection`);
+            }
+        });
+    }
+
+    /**
+     * Send conversation initialization to ElevenLabs
+     * @param {string} connectionId - Connection identifier
+     * @param {WebSocket} elevenLabsWs - ElevenLabs WebSocket
+     * @param {object} userContext - User context for personalization
+     */
+    async sendConversationInitialization(connectionId, elevenLabsWs, userContext) {
+        if (!userContext || !userContext.name || userContext.name === 'New Caller') {
+            const conversationData = {
+                type: "conversation_initiation_client_data",
+                dynamicVariables: {
+                    customer_name: 'New Caller',
+                    verification_complete: false
+                },
+                overrides: {
+                    agent: {
+                        firstMessage: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
+                    }
+                }
+            };
+            console.log(`📤 [${connectionId}] Sending generic conversation data`);
+            elevenLabsWs.send(safeStringify(conversationData));
+            return;
+        }
+
+        const balance = parseFloat(userContext.fakeAccountBalance || 0).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        });
+
+        const conversationData = {
+            type: "conversation_initiation_client_data",
+            dynamicVariables: {
+                customer_name: userContext.name,
+                company_name: userContext.companyName,
+                account_number: userContext.fakeAccountNumber,
+                current_balance: balance,
+                phone_number: userContext.phoneNumber,
+                loan_status: userContext.loanApplicationStatus || 'None',
+                is_fraud_flagged: userContext.fraudScenario || false,
+                verification_complete: true
+            },
+            overrides: {
+                agent: {
+                    firstMessage: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
+                }
+            }
+        };
+
+        console.log(`📤 [${connectionId}] Sending personalized conversation data for ${userContext.name}`);
+        console.log(`🔍 [${connectionId}] Config:`, safeStringify(conversationData, 2));
+        elevenLabsWs.send(safeStringify(conversationData));
+    }
+
     async handleWebsocketConnection(infobipWs, connectionId) {
         let elevenLabsWs = null;
         let userContext = null;
 
-        // Note: User context now comes from ElevenLabs webhook instead of hardcoded values
-        console.log(`📍 [${connectionId}] WebSocket connection established - ElevenLabs webhook will handle user context`);
+        console.log(`📍 [${connectionId}] WebSocket connection established from Infobip`);
 
         // Store connection info
         this.activeConnections.set(connectionId, {
@@ -51,18 +221,18 @@ class WebSocketProxy {
             userContext: null
         });
 
-        // 🎯 NEW: Try to get user context from active calls
-        // We'll look for the most recent active call to associate with this WebSocket
+        // 🎯 Try to get user context from active calls
         const activeCalls = callsHandler.getActiveCalls();
         console.log(`🔍 [${connectionId}] Active calls count:`, activeCalls.length);
-        console.log(`🔍 [${connectionId}] Active calls:`, activeCalls.map(call => ({callId: call.callId, userName: call.userName})));
 
+        let callId = null;
         if (activeCalls.length > 0) {
             // Get the most recent call (likely the one that just connected)
             const recentCall = activeCalls[activeCalls.length - 1];
-            console.log(`🔍 [${connectionId}] Using recent call:`, recentCall.callId, 'for user:', recentCall.userName);
+            callId = recentCall.callId;
+            console.log(`🔍 [${connectionId}] Using recent call:`, callId, 'for user:', recentCall.userName);
 
-            const callSession = callsHandler.getCallSession(recentCall.callId);
+            const callSession = callsHandler.getCallSession(callId);
             console.log(`🔍 [${connectionId}] Call session:`, callSession ? 'FOUND' : 'NOT FOUND');
 
             if (callSession?.userContext) {
@@ -84,6 +254,34 @@ class WebSocketProxy {
             }
         } else {
             console.log(`⚠️  [${connectionId}] No active calls found`);
+        }
+
+        // 🚀 NEW: Check if we have a pre-established ElevenLabs connection for this call
+        if (callId && this.pendingElevenLabsConnections.has(callId)) {
+            console.log(`⚡ [${connectionId}] Found pre-established ElevenLabs connection for call ${callId}`);
+            const pending = this.pendingElevenLabsConnections.get(callId);
+            elevenLabsWs = pending.ws;
+            userContext = pending.userContext;
+
+            // Remove from pending pool
+            this.pendingElevenLabsConnections.delete(callId);
+
+            // Update connection tracking
+            const connection = this.activeConnections.get(connectionId);
+            if (connection) {
+                connection.elevenLabsWs = elevenLabsWs;
+                connection.userContext = userContext;
+            }
+
+            // Set up message handlers for the pre-established connection
+            this.setupElevenLabsMessageHandlers(connectionId, elevenLabsWs, infobipWs);
+
+            // Send conversation initialization immediately since connection is ready
+            await this.sendConversationInitialization(connectionId, elevenLabsWs, userContext);
+
+            console.log(`✅ [${connectionId}] Pre-established connection activated and ready`);
+        } else {
+            console.log(`⚠️  [${connectionId}] No pre-established connection, falling back to on-demand setup`);
         }
 
         infobipWs.on('error', (error) => {
@@ -771,4 +969,9 @@ class WebSocketProxy {
     }
 }
 
+// Export singleton instance
+let wsProxyInstance = null;
+
 module.exports = WebSocketProxy;
+module.exports.getInstance = () => wsProxyInstance;
+module.exports.setInstance = (instance) => { wsProxyInstance = instance; };

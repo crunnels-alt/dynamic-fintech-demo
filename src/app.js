@@ -92,6 +92,7 @@ async function startServer() {
             // Start WebSocket proxy for voice calls using the same server
             console.log('🔌 Starting WebSocket proxy for voice integration...');
             const wsProxy = new WebSocketProxy();
+            WebSocketProxy.setInstance(wsProxy); // Store singleton instance
             wsProxy.attachToServer(server);
         });
 

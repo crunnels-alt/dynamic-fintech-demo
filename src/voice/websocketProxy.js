@@ -4,11 +4,29 @@ const fetch = require('node-fetch');
 const callsHandler = require('./callsHandler');
 const { safeStringify } = require('../utils/jsonSanitizer');
 
+// Helper: parse boolean-like env values
+function parseBooleanEnv(value, defaultValue) {
+    if (value === undefined || value === null) return defaultValue;
+    const v = String(value).trim().toLowerCase();
+    if (["1", "true", "yes", "on", "y"].includes(v)) return true;
+    if (["0", "false", "no", "off", "n"].includes(v)) return false;
+    return defaultValue;
+}
+
 class WebSocketProxy {
     constructor() {
         this.elevenLabsAgentId = process.env.ELEVENLABS_AGENT_ID;
         this.elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
         this.port = process.env.WS_PROXY_PORT || 3500;
+
+        // Runtime-tunable config via env vars
+        this.config = {
+            idleCommitMs: parseInt(process.env.ELEVENLABS_IDLE_COMMIT_MS, 10) || 500,
+            enableCommitOnSilence: parseBooleanEnv(process.env.ELEVENLABS_COMMIT_ON_SILENCE, true),
+            autoResponseCreate: parseBooleanEnv(process.env.ELEVENLABS_AUTO_RESPONSE_CREATE, true),
+            audioLogIntervalMs: parseInt(process.env.ELEVENLABS_AUDIO_LOG_INTERVAL_MS, 10) || 1000,
+            audioLogging: parseBooleanEnv(process.env.ELEVENLABS_AUDIO_LOGGING, true),
+        };
 
         this.server = http.createServer();
         this.wss = new WebSocket.Server({ server: this.server });
@@ -146,7 +164,13 @@ class WebSocketProxy {
         });
 
         elevenLabsWs.on('close', (code, reason) => {
-            console.log(`🤖 [${connectionId}] ElevenLabs WebSocket closed - Code: ${code}`);
+            const reasonText = Buffer.isBuffer(reason) ? reason.toString() : (reason || '');
+            console.log(`🤖 [${connectionId}] ElevenLabs WebSocket closed - Code: ${code}${reasonText ? `, Reason: ${reasonText}` : ''}`);
+            const conn = this.activeConnections.get(connectionId);
+            if (conn && conn.commitTimer) {
+                clearTimeout(conn.commitTimer);
+                conn.commitTimer = null;
+            }
             if (code !== 1000) {
                 console.error(`⚠️  [${connectionId}] Abnormal ElevenLabs disconnection`);
             }
@@ -168,17 +192,8 @@ class WebSocketProxy {
                     return;
                 }
 
-                // Binary audio data from Infobip - forward to ElevenLabs
-                console.log(`🎤 [${connectionId}] Received ${message.length} bytes of audio from Infobip`);
-                if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
-                    const audioMessage = {
-                        user_audio_chunk: Buffer.from(message).toString('base64'),
-                    };
-                    elevenLabsWs.send(safeStringify(audioMessage));
-                    console.log(`📤 [${connectionId}] Forwarded audio to ElevenLabs`);
-                } else {
-                    console.log(`⚠️  [${connectionId}] ElevenLabs WebSocket not ready, audio dropped`);
-                }
+                // Binary audio data — hand off to shared handler with throttling and idle commit
+                this.handleIncomingAudio(connectionId, message, elevenLabsWs);
             } catch (error) {
                 console.error(`❌ [${connectionId}] Error processing Infobip message:`, error);
             }
@@ -187,6 +202,12 @@ class WebSocketProxy {
         // Handle WebSocket closure
         infobipWs.on('close', () => {
             console.log(`📞 [${connectionId}] Infobip client disconnected`);
+
+            const conn = this.activeConnections.get(connectionId);
+            if (conn && conn.commitTimer) {
+                clearTimeout(conn.commitTimer);
+                conn.commitTimer = null;
+            }
 
             if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
                 elevenLabsWs.close();
@@ -202,6 +223,141 @@ class WebSocketProxy {
     }
 
     /**
+     * Internal: get or initialize connection state used for audio streaming and throttled logging
+     */
+    getOrInitConnState(connectionId) {
+        let conn = this.activeConnections.get(connectionId);
+        if (!conn) return null;
+        if (!conn.audioStats) {
+            conn.audioStats = {
+                lastLogAt: 0,
+                bytesForwarded: 0,
+                chunksForwarded: 0,
+                drops: 0
+            };
+        }
+        if (conn.commitTimer === undefined) {
+            conn.commitTimer = null;
+        }
+        if (conn.hasPendingAudio === undefined) {
+            conn.hasPendingAudio = false;
+        }
+        return conn;
+    }
+
+    /**
+     * Internal: handle binary audio chunk from Infobip
+     */
+    handleIncomingAudio(connectionId, message, elevenLabsWs) {
+        try {
+            const conn = this.getOrInitConnState(connectionId);
+            if (!conn) return;
+
+            if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
+                const base64 = Buffer.from(message).toString('base64');
+                this.sendAudioAppend(connectionId, elevenLabsWs, base64);
+                conn.hasPendingAudio = true;
+
+                // Update stats
+                conn.audioStats.bytesForwarded += message.length;
+                conn.audioStats.chunksForwarded += 1;
+
+                // Throttled summary log once per second
+                const now = Date.now();
+                if (this.config.audioLogging && now - (conn.audioStats.lastLogAt || 0) >= (Number(this.config.audioLogIntervalMs) || 1000)) {
+                    const kb = (conn.audioStats.bytesForwarded / 1024).toFixed(1);
+                    console.log(`🎤 [${connectionId}] Forwarded ${conn.audioStats.chunksForwarded} chunks (${kb} KB) to ElevenLabs in last second`);
+                    conn.audioStats.bytesForwarded = 0;
+                    conn.audioStats.chunksForwarded = 0;
+                    conn.audioStats.drops = 0;
+                    conn.audioStats.lastLogAt = now;
+                }
+
+                // Schedule idle commit so agent responds
+                this.scheduleIdleCommit(connectionId, elevenLabsWs);
+            } else {
+                // Not ready yet — count drops but throttle logging
+                const conn = this.getOrInitConnState(connectionId);
+                if (!conn) return;
+                conn.audioStats.drops += 1;
+                const now = Date.now();
+                if (this.config.audioLogging && now - (conn.audioStats.lastLogAt || 0) >= (Number(this.config.audioLogIntervalMs) || 1000)) {
+                    console.log(`⚠️  [${connectionId}] ElevenLabs WS not ready; dropped ${conn.audioStats.drops} chunks in last second`);
+                    conn.audioStats.bytesForwarded = 0;
+                    conn.audioStats.chunksForwarded = 0;
+                    conn.audioStats.drops = 0;
+                    conn.audioStats.lastLogAt = now;
+                }
+            }
+        } catch (error) {
+            console.error(`❌ [${connectionId}] Error handling incoming audio:`, error);
+        }
+    }
+
+    /**
+     * Internal: send append event for audio
+     */
+    sendAudioAppend(connectionId, elevenLabsWs, base64Audio) {
+        const audioMessage = {
+            type: 'input_audio_buffer.append',
+            audio: base64Audio
+        };
+        elevenLabsWs.send(safeStringify(audioMessage));
+    }
+
+    /**
+     * Internal: schedule a commit if no audio has been received for a short idle window
+     */
+    scheduleIdleCommit(connectionId, elevenLabsWs) {
+        const conn = this.getOrInitConnState(connectionId);
+        if (!conn) return;
+
+        // Clear any existing timer and schedule a new one
+        if (conn.commitTimer) {
+            clearTimeout(conn.commitTimer);
+            conn.commitTimer = null;
+        }
+
+        if (!this.config.enableCommitOnSilence) {
+            return;
+        }
+        const idleMs = Number(this.config.idleCommitMs) || 500; // commit after configured idle
+        conn.commitTimer = setTimeout(() => {
+            this.commitAndRequestResponse(connectionId, elevenLabsWs);
+        }, idleMs);
+    }
+
+    /**
+     * Internal: commit current audio buffer and request an agent response
+     */
+    commitAndRequestResponse(connectionId, elevenLabsWs) {
+        const conn = this.getOrInitConnState(connectionId);
+        if (!conn) return;
+        conn.commitTimer = null;
+
+        if (!conn.hasPendingAudio) {
+            // Nothing to commit — avoid spamming
+            return;
+        }
+        if (!elevenLabsWs || elevenLabsWs.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        try {
+            // Commit the buffered audio so the agent can process it
+            elevenLabsWs.send(safeStringify({ type: 'input_audio_buffer.commit' }));
+            // Request a response from the agent (configurable)
+            if (this.config.autoResponseCreate) {
+                elevenLabsWs.send(safeStringify({ type: 'response.create' }));
+            }
+            conn.hasPendingAudio = false;
+            console.log(`✅ [${connectionId}] Committed audio buffer${this.config.autoResponseCreate ? ' and requested agent response' : ''}`);
+        } catch (err) {
+            console.error(`❌ [${connectionId}] Failed to commit/request response:`, err.message || err);
+        }
+    }
+
+    /**
      * Send conversation initialization to ElevenLabs
      * @param {string} connectionId - Connection identifier
      * @param {WebSocket} elevenLabsWs - ElevenLabs WebSocket
@@ -211,13 +367,13 @@ class WebSocketProxy {
         if (!userContext || !userContext.name || userContext.name === 'New Caller') {
             const conversationData = {
                 type: "conversation_initiation_client_data",
-                dynamicVariables: {
+                dynamic_variables: {
                     customer_name: 'New Caller',
                     verification_complete: false
                 },
-                overrides: {
+                conversation_config_override: {
                     agent: {
-                        firstMessage: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
+                        first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
                     }
                 }
             };
@@ -233,7 +389,7 @@ class WebSocketProxy {
 
         const conversationData = {
             type: "conversation_initiation_client_data",
-            dynamicVariables: {
+            dynamic_variables: {
                 customer_name: userContext.name,
                 company_name: userContext.companyName,
                 account_number: userContext.fakeAccountNumber,
@@ -243,9 +399,9 @@ class WebSocketProxy {
                 is_fraud_flagged: userContext.fraudScenario || false,
                 verification_complete: true
             },
-            overrides: {
+            conversation_config_override: {
                 agent: {
-                    firstMessage: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
+                    first_message: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
                 }
             }
         };
@@ -390,7 +546,7 @@ class WebSocketProxy {
 
                     conversationData = {
                         type: "conversation_initiation_client_data",
-                        dynamicVariables: {
+                        dynamic_variables: {
                             customer_name: userContext.name,
                             company_name: userContext.companyName,
                             account_number: userContext.fakeAccountNumber,
@@ -400,9 +556,9 @@ class WebSocketProxy {
                             is_fraud_flagged: userContext.fraudScenario || false,
                             verification_complete: true
                         },
-                        overrides: {
+                        conversation_config_override: {
                             agent: {
-                                firstMessage: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
+                                first_message: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
                             }
                         }
                     };
@@ -412,13 +568,13 @@ class WebSocketProxy {
                 } else {
                     conversationData = {
                         type: "conversation_initiation_client_data",
-                        dynamicVariables: {
+                        dynamic_variables: {
                             customer_name: 'New Caller',
                             verification_complete: false
                         },
-                        overrides: {
+                        conversation_config_override: {
                             agent: {
-                                firstMessage: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
+                                first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
                             }
                         }
                     };
@@ -470,66 +626,6 @@ class WebSocketProxy {
                     console.log(`🤖 [${connectionId}] ✅ SUCCESSFULLY connected to ElevenLabs Conversational AI`);
                     console.log(`✅ [${connectionId}] WebSocket readyState after open: ${elevenLabsWs.readyState}`);
 
-                    // TESTING: If we already have hardcoded context, send it immediately
-                    if (userContext && userContext.name === "Connor Runnels") {
-                        console.log(`🚀 [${connectionId}] TESTING: Sending hardcoded conversation data immediately`);
-
-                        const balance = parseFloat(userContext.fakeAccountBalance || 0).toLocaleString('en-US', {
-                            style: 'currency',
-                            currency: 'USD'
-                        });
-
-                        const testConversationData = {
-                            type: "conversation_initiation_client_data",
-                            dynamic_variables: {
-                                customer_name: userContext.name,
-                                company_name: userContext.companyName,
-                                account_number: userContext.fakeAccountNumber,
-                                current_balance: balance,
-                                phone_number: userContext.phoneNumber,
-                                loan_status: userContext.loanApplicationStatus || 'None',
-                                is_fraud_flagged: userContext.fraudScenario || false,
-                                verification_complete: true
-                            },
-                            overrides: {
-                                agent: {
-                                    firstMessage: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
-                                }
-                            }
-                        };
-
-                        console.log(`🔧 [${connectionId}] TEST conversation data:`, safeStringify(testConversationData, 2));
-                        elevenLabsWs.send(safeStringify(testConversationData));
-
-                        // Also try sending a follow-up message to explicitly set customer context
-                        setTimeout(() => {
-                            const contextMessage = {
-                                type: "conversation_update",
-                                customer_authenticated: true,
-                                customer_info: {
-                                    name: userContext.name,
-                                    balance: balance,
-                                    account: userContext.fakeAccountNumber,
-                                    verification_status: "verified_by_phone"
-                                },
-                                instruction: `Customer ${userContext.name} has been verified via phone number ${userContext.phoneNumber}. Current balance: ${balance}. Skip all authentication - customer is already verified.`
-                            };
-                            console.log(`🔧 [${connectionId}] Sending context update:`, safeStringify(contextMessage, 2));
-                            elevenLabsWs.send(safeStringify(contextMessage));
-                        }, 500);
-
-                        // Try sending a simple text message that tells the agent about the customer
-                        setTimeout(() => {
-                            const textMessage = {
-                                type: "text",
-                                text: `SYSTEM: Customer ${userContext.name} from ${userContext.companyName} is calling. Phone verified: ${userContext.phoneNumber}. Account balance: ${balance}. Account number: ${userContext.fakeAccountNumber}. Customer is PRE-AUTHENTICATED - skip all verification steps.`
-                            };
-                            console.log(`🔧 [${connectionId}] Sending text message:`, safeStringify(textMessage, 2));
-                            elevenLabsWs.send(safeStringify(textMessage));
-                        }, 1000);
-
-                        return; // Skip the retry logic
-                    }
 
                     // Try multiple times to get user context as call session may not be ready immediately
                     const tryGetUserContext = async (attempt = 1, maxAttempts = 3) => {
@@ -572,7 +668,7 @@ class WebSocketProxy {
 
                             finalConversationData = {
                                 type: "conversation_initiation_client_data",
-                                dynamicVariables: {
+                                dynamic_variables: {
                                     customer_name: finalUserContext.name,
                                     company_name: finalUserContext.companyName,
                                     account_number: finalUserContext.fakeAccountNumber,
@@ -582,9 +678,9 @@ class WebSocketProxy {
                                     is_fraud_flagged: finalUserContext.fraudScenario || false,
                                     verification_complete: true
                                 },
-                                overrides: {
+                                conversation_config_override: {
                                     agent: {
-                                        firstMessage: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
+                                        first_message: "Hello {{customer_name}}! Thank you for calling Infobip Capital. I can see you're calling from your registered number, and your current account balance is {{current_balance}}. How can I help you today?"
                                     }
                                 }
                             };
@@ -592,13 +688,13 @@ class WebSocketProxy {
                         } else {
                             finalConversationData = {
                                 type: "conversation_initiation_client_data",
-                                dynamicVariables: {
+                                dynamic_variables: {
                                     customer_name: 'New Caller',
                                     verification_complete: false
                                 },
-                                overrides: {
+                                conversation_config_override: {
                                     agent: {
-                                        firstMessage: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
+                                        first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. May I have your name so I can look up your account?"
                                     }
                                 }
                             };
@@ -640,6 +736,12 @@ class WebSocketProxy {
                     console.log(`🤖 [${connectionId}] ElevenLabs WebSocket CLOSED - Code: ${code}, Reason: ${reason}`);
                     console.log(`📊 [${connectionId}] Close code meanings: 1000=Normal, 1001=GoingAway, 1002=ProtocolError, 1003=UnsupportedData, 1006=AbnormalClosure, 1011=ServerError`);
 
+                    const conn = this.activeConnections.get(connectionId);
+                    if (conn && conn.commitTimer) {
+                        clearTimeout(conn.commitTimer);
+                        conn.commitTimer = null;
+                    }
+
                     if (code !== 1000) {
                         console.error(`⚠️  [${connectionId}] ❌ ABNORMAL ElevenLabs disconnection with code ${code}`);
 
@@ -672,17 +774,8 @@ class WebSocketProxy {
                     return;
                 }
 
-                // Binary audio data from Infobip - forward to ElevenLabs
-                console.log(`🎤 [${connectionId}] Received ${message.length} bytes of audio from Infobip`);
-                if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
-                    const audioMessage = {
-                        user_audio_chunk: Buffer.from(message).toString('base64'),
-                    };
-                    elevenLabsWs.send(safeStringify(audioMessage));
-                    console.log(`📤 [${connectionId}] Forwarded audio to ElevenLabs`);
-                } else {
-                    console.log(`⚠️  [${connectionId}] ElevenLabs WebSocket not ready, audio dropped`);
-                }
+                // Binary audio data — hand off to shared handler with throttling and idle commit
+                this.handleIncomingAudio(connectionId, message, elevenLabsWs);
             } catch (error) {
                 console.error(`❌ [${connectionId}] Error processing Infobip message:`, error);
             }
@@ -692,6 +785,12 @@ class WebSocketProxy {
         infobipWs.on('close', () => {
             console.log(`📞 [${connectionId}] Infobip client disconnected`);
             
+            const conn = this.activeConnections.get(connectionId);
+            if (conn && conn.commitTimer) {
+                clearTimeout(conn.commitTimer);
+                conn.commitTimer = null;
+            }
+
             if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
                 elevenLabsWs.close();
             }

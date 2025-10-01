@@ -168,6 +168,7 @@ class CallsHandler {
 
             const response = await this.ibClient.post(`${this.infobipBaseUrl}/calls/1/dialogs`, {
                 parentCallId: callId,
+                maxDuration: 3600, // Allow up to 1 hour (3600 seconds)
                 childCallRequest: {
                     endpoint: {
                         type: 'WEBSOCKET',
@@ -223,6 +224,7 @@ class CallsHandler {
             // Create dialog with special context for registration flow
             const response = await this.ibClient.post(`${this.infobipBaseUrl}/calls/1/dialogs`, {
                 parentCallId: callId,
+                maxDuration: 3600, // Allow up to 1 hour (3600 seconds)
                 childCallRequest: {
                     endpoint: {
                         type: 'WEBSOCKET',

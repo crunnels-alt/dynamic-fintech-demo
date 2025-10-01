@@ -2,6 +2,7 @@ const WebSocket = require('ws');
 const http = require('http');
 const fetch = require('node-fetch');
 const callsHandler = require('./callsHandler');
+const { safeStringify } = require('../utils/jsonSanitizer');
 
 class WebSocketProxy {
     constructor() {
@@ -247,8 +248,8 @@ class WebSocketProxy {
                             }
                         };
 
-                        console.log(`🔧 [${connectionId}] TEST conversation data:`, JSON.stringify(testConversationData, null, 2));
-                        elevenLabsWs.send(JSON.stringify(testConversationData));
+                        console.log(`🔧 [${connectionId}] TEST conversation data:`, safeStringify(testConversationData, 2));
+                        elevenLabsWs.send(safeStringify(testConversationData));
 
                         // Also try sending a follow-up message to explicitly set customer context
                         setTimeout(() => {
@@ -263,8 +264,8 @@ class WebSocketProxy {
                                 },
                                 instruction: `Customer ${userContext.name} has been verified via phone number ${userContext.phoneNumber}. Current balance: ${balance}. Skip all authentication - customer is already verified.`
                             };
-                            console.log(`🔧 [${connectionId}] Sending context update:`, JSON.stringify(contextMessage, null, 2));
-                            elevenLabsWs.send(JSON.stringify(contextMessage));
+                            console.log(`🔧 [${connectionId}] Sending context update:`, safeStringify(contextMessage, 2));
+                            elevenLabsWs.send(safeStringify(contextMessage));
                         }, 500);
 
                         // Try sending a simple text message that tells the agent about the customer
@@ -273,8 +274,8 @@ class WebSocketProxy {
                                 type: "text",
                                 text: `SYSTEM: Customer ${userContext.name} from ${userContext.companyName} is calling. Phone verified: ${userContext.phoneNumber}. Account balance: ${balance}. Account number: ${userContext.fakeAccountNumber}. Customer is PRE-AUTHENTICATED - skip all verification steps.`
                             };
-                            console.log(`🔧 [${connectionId}] Sending text message:`, JSON.stringify(textMessage, null, 2));
-                            elevenLabsWs.send(JSON.stringify(textMessage));
+                            console.log(`🔧 [${connectionId}] Sending text message:`, safeStringify(textMessage, 2));
+                            elevenLabsWs.send(safeStringify(textMessage));
                         }, 1000);
 
                         return; // Skip the retry logic
@@ -355,8 +356,8 @@ class WebSocketProxy {
                         }
 
                         if (finalConversationData) {
-                            console.log(`🔍 [${connectionId}] Final data being sent:`, JSON.stringify(finalConversationData, null, 2));
-                            elevenLabsWs.send(JSON.stringify(finalConversationData));
+                            console.log(`🔍 [${connectionId}] Final data being sent:`, safeStringify(finalConversationData, 2));
+                            elevenLabsWs.send(safeStringify(finalConversationData));
                         }
                     }, 1000); // Wait 1 second for call session to be established
                 });
@@ -427,7 +428,7 @@ class WebSocketProxy {
                     const audioMessage = {
                         user_audio_chunk: Buffer.from(message).toString('base64'),
                     };
-                    elevenLabsWs.send(JSON.stringify(audioMessage));
+                    elevenLabsWs.send(safeStringify(audioMessage));
                     console.log(`📤 [${connectionId}] Forwarded audio to ElevenLabs`);
                 } else {
                     console.log(`⚠️  [${connectionId}] ElevenLabs WebSocket not ready, audio dropped`);
@@ -480,7 +481,7 @@ class WebSocketProxy {
                 // Respond to ping events
                 if (message.ping_event?.event_id) {
                     if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
-                        elevenLabsWs.send(JSON.stringify({
+                        elevenLabsWs.send(safeStringify({
                             type: 'pong',
                             event_id: message.ping_event.event_id,
                         }));
@@ -666,8 +667,8 @@ class WebSocketProxy {
             type: 'context_update',
             context: this.buildConversationConfig(userContext)
         };
-        
-        elevenLabsWs.send(JSON.stringify(contextUpdate));
+
+        elevenLabsWs.send(safeStringify(contextUpdate));
     }
 
     /**

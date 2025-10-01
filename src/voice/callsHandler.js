@@ -1,6 +1,7 @@
 const axios = require('axios');
 const DatabaseFactory = require('../database/DatabaseFactory');
 const PhoneNumberUtils = require('../utils/phoneUtils');
+const { safeStringify } = require('../utils/jsonSanitizer');
 
 // Initialize database manager based on environment
 const databaseManager = DatabaseFactory.create();
@@ -302,7 +303,7 @@ class CallsHandler {
                 metadata: {
                     transferReason: reason,
                     originalCallId: callId,
-                    userContext: JSON.stringify(callSession.userContext),
+                    userContext: safeStringify(callSession.userContext),
                     timestamp: new Date().toISOString()
                 }
             });

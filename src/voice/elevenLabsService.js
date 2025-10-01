@@ -1,6 +1,7 @@
 const fetch = require('node-fetch');
 const WebSocket = require('ws');
 const { randomUUID } = require('crypto');
+const { safeStringify } = require('../utils/jsonSanitizer');
 
 // Fallback function for uuid generation
 function generateUUID() {
@@ -106,7 +107,7 @@ class ElevenLabsService {
             }
         };
 
-        session.ws.send(JSON.stringify(contextMessage));
+        session.ws.send(safeStringify(contextMessage));
     }
 
     /**
@@ -210,7 +211,7 @@ class ElevenLabsService {
             }
         };
 
-        session.ws.send(JSON.stringify(response));
+        session.ws.send(safeStringify(response));
     }
 
     /**
@@ -234,7 +235,7 @@ class ElevenLabsService {
                     }
                 }
             };
-            session.ws.send(JSON.stringify(response));
+            session.ws.send(safeStringify(response));
         } else {
             const response = {
                 type: 'function_response',
@@ -246,7 +247,7 @@ class ElevenLabsService {
                     }
                 }
             };
-            session.ws.send(JSON.stringify(response));
+            session.ws.send(safeStringify(response));
         }
     }
 
@@ -269,7 +270,7 @@ class ElevenLabsService {
             }
         };
 
-        session.ws.send(JSON.stringify(response));
+        session.ws.send(safeStringify(response));
         
         // Trigger call transfer
         setTimeout(() => {
@@ -297,7 +298,7 @@ class ElevenLabsService {
             }
         };
 
-        session.ws.send(JSON.stringify(response));
+        session.ws.send(safeStringify(response));
     }
 
     /**
@@ -322,7 +323,7 @@ class ElevenLabsService {
 
         // Store transfer info for agent
         // This would typically be sent to an agent dashboard
-        console.log('Transfer info for agent:', JSON.stringify(transferInfo, null, 2));
+        console.log('Transfer info for agent:', safeStringify(transferInfo, 2));
 
         // Close the ElevenLabs session
         session.ws.close();

@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const DatabaseFactory = require('../database/DatabaseFactory');
 const smsService = require('../utils/smsService');
+const { safeStringify } = require('../utils/jsonSanitizer');
 
 // Initialize database manager based on environment
 const databaseManager = DatabaseFactory.create();
@@ -49,7 +50,7 @@ router.get('/debug-phone/:phoneNumber', async (req, res) => {
 // ElevenLabs webhook endpoint for conversation_initiation_client_data
 router.post('/elevenlabs-webhook', async (req, res) => {
     try {
-        console.log('🔔 ElevenLabs webhook called:', JSON.stringify(req.body, null, 2));
+        console.log('🔔 ElevenLabs webhook called:', safeStringify(req.body, 2));
 
         // Extract phone number from the webhook payload
         // This might be in different places depending on how ElevenLabs sends it
@@ -107,7 +108,7 @@ router.post('/elevenlabs-webhook', async (req, res) => {
                 }
             };
 
-            console.log(`📤 ElevenLabs webhook - Sending personalized data:`, JSON.stringify(responseData, null, 2));
+            console.log(`📤 ElevenLabs webhook - Sending personalized data:`, safeStringify(responseData, 2));
             return res.json(responseData);
 
         } else {
@@ -350,7 +351,7 @@ router.post('/webhook/voice', async (req, res) => {
     try {
         const event = req.body;
         console.log('📞 Received Infobip Voice event:', event.type, event.callId);
-        console.log('🔍 Full webhook payload:', JSON.stringify(event, null, 2));
+        console.log('🔍 Full webhook payload:', safeStringify(event, 2));
 
         switch (event.type) {
             case 'CALL_RECEIVED':

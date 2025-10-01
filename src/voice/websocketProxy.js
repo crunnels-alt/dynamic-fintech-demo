@@ -154,6 +154,54 @@ class WebSocketProxy {
     }
 
     /**
+     * Set up message handlers for Infobip WebSocket
+     * @param {string} connectionId - Connection identifier
+     * @param {WebSocket} infobipWs - Infobip WebSocket
+     * @param {WebSocket} elevenLabsWs - ElevenLabs WebSocket
+     */
+    setupInfobipMessageHandlers(connectionId, infobipWs, elevenLabsWs) {
+        // Handle messages from Infobip
+        infobipWs.on('message', (message) => {
+            try {
+                if (typeof message === 'string') {
+                    // JSON event from Infobip - ignore for now
+                    return;
+                }
+
+                // Binary audio data from Infobip - forward to ElevenLabs
+                console.log(`🎤 [${connectionId}] Received ${message.length} bytes of audio from Infobip`);
+                if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
+                    const audioMessage = {
+                        user_audio_chunk: Buffer.from(message).toString('base64'),
+                    };
+                    elevenLabsWs.send(safeStringify(audioMessage));
+                    console.log(`📤 [${connectionId}] Forwarded audio to ElevenLabs`);
+                } else {
+                    console.log(`⚠️  [${connectionId}] ElevenLabs WebSocket not ready, audio dropped`);
+                }
+            } catch (error) {
+                console.error(`❌ [${connectionId}] Error processing Infobip message:`, error);
+            }
+        });
+
+        // Handle WebSocket closure
+        infobipWs.on('close', () => {
+            console.log(`📞 [${connectionId}] Infobip client disconnected`);
+
+            if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
+                elevenLabsWs.close();
+            }
+
+            // Clean up connection tracking
+            this.activeConnections.delete(connectionId);
+        });
+
+        infobipWs.on('error', (error) => {
+            console.error(`❌ Infobip WebSocket error for ${connectionId}:`, error);
+        });
+    }
+
+    /**
      * Send conversation initialization to ElevenLabs
      * @param {string} connectionId - Connection identifier
      * @param {WebSocket} elevenLabsWs - ElevenLabs WebSocket
@@ -279,7 +327,11 @@ class WebSocketProxy {
             // Send conversation initialization immediately since connection is ready
             await this.sendConversationInitialization(connectionId, elevenLabsWs, userContext);
 
+            // Set up Infobip message handlers to forward audio to ElevenLabs
+            this.setupInfobipMessageHandlers(connectionId, infobipWs, elevenLabsWs);
+
             console.log(`✅ [${connectionId}] Pre-established connection activated and ready`);
+            return; // Exit early - all handlers are set up
         } else {
             console.log(`⚠️  [${connectionId}] No pre-established connection, falling back to on-demand setup`);
         }

@@ -19,17 +19,33 @@ class WebSocketProxy {
             console.log('[Bridge] New Infobip connection');
             
             let elevenLabsWs = null;
-            let elevenLabsReady = false;
-            let audioPacketCount = 0;
-            let audioSentCount = 0;
-            let audioBuffer = []; // Buffer to hold audio until ElevenLabs is ready
             let commitTimer = null;
-            let lastSpeechTime = null;
-            let hasPendingAudio = false;
-            const idleCommitMs = 500; // Commit audio after 500ms of silence
-            const speechThreshold = 500; // RMS threshold to detect speech vs silence
+            const idleCommitMs = Number(process.env.ELEVENLABS_IDLE_COMMIT_MS || 500);
+            const autoResponseCreate = (process.env.ELEVENLABS_AUTO_RESPONSE_CREATE ?? 'true').toLowerCase() !== 'false';
+
+            const clearCommit = () => { 
+                if (commitTimer) { 
+                    clearTimeout(commitTimer); 
+                    commitTimer = null; 
+                } 
+            };
             
-            console.log('[Bridge] Using ElevenLabs with speech-aware commit logic');
+            const scheduleCommit = () => {
+                clearCommit();
+                commitTimer = setTimeout(() => {
+                    if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
+                        try {
+                            elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+                            if (autoResponseCreate) {
+                                elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
+                            }
+                            console.log('[ElevenLabs] ✅ Committed audio buffer');
+                        } catch (e) {
+                            console.error('[ElevenLabs] ❌ Commit error:', e.message || e);
+                        }
+                    }
+                }, idleCommitMs);
+            };
 
             // Set up ElevenLabs connection
             (async () => {
@@ -39,80 +55,21 @@ class WebSocketProxy {
 
                     elevenLabsWs.on('open', () => {
                         console.log('[ElevenLabs] Connected to Conversational AI');
-                        const initialConfig = { 
-                            type: 'conversation_initiation_client_data',
-                            conversation_config_override: {
-                                agent: {
-                                    prompt: {
-                                        prompt: "You are a helpful AI assistant for Infobip Capital, a modern fintech platform. Greet the caller warmly and ask how you can help them today."
-                                    },
-                                    first_message: "Hello! Welcome to Infobip Capital. How can I assist you today?",
-                                    language: "en"
-                                },
-                                tts: {
-                                    model_id: "eleven_turbo_v2_5"
-                                },
-                                asr: {
-                                    quality: "high",
-                                    keywords: []
-                                },
-                                vad: {
-                                    enabled: true,
-                                    threshold: 0.5
-                                },
-                                audio: {
-                                    input: {
-                                        encoding: "pcm_16000",
-                                        sample_rate: 16000,
-                                        channels: 1
-                                    },
-                                    output: {
-                                        encoding: "pcm_16000",
-                                        sample_rate: 16000,
-                                        channels: 1
-                                    }
-                                }
-                            }
-                        };
+                        const initialConfig = { type: 'conversation_initiation_client_data' };
                         elevenLabsWs.send(JSON.stringify(initialConfig));
-                        console.log('[ElevenLabs] Sent conversation_initiation_client_data with VAD enabled');
                     });
 
                     elevenLabsWs.on('message', (data) => {
                         try {
                             const message = JSON.parse(data);
-                            console.log(`[ElevenLabs] Received message type: ${message.type}`);
                             switch (message.type) {
                                 case 'conversation_initiation_metadata':
-                                    console.log('[ElevenLabs] Conversation initialized - READY FOR AUDIO');
-                                    elevenLabsReady = true;
-                                    
-                                    // Send any buffered audio packets first
-                                    if (audioBuffer.length > 0) {
-                                        console.log(`[ElevenLabs] Sending ${audioBuffer.length} buffered audio packets...`);
-                                        audioBuffer.forEach(bufferedAudio => {
-                                            elevenLabsWs.send(JSON.stringify({
-                                                type: 'input_audio_buffer.append',
-                                                audio: bufferedAudio
-                                            }));
-                                        });
-                                        audioBuffer = []; // Clear buffer
-                                    }
-                                    
-                                    // Trigger initial greeting
-                                    console.log('[ElevenLabs] Triggering initial greeting...');
-                                    elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
+                                    console.log('[ElevenLabs] ✅ Conversation initialized');
                                     break;
                                 case 'audio': {
                                     const buff = Buffer.from(message.audio_event.audio_base_64, 'base64');
-                                    audioSentCount++;
-                                    if (audioSentCount === 1 || audioSentCount % 50 === 0) {
-                                        console.log(`[ElevenLabs → Infobip] Audio packet #${audioSentCount} (${buff.length} bytes)`);
-                                    }
                                     if (infobipWs.readyState === WebSocket.OPEN) {
                                         infobipWs.send(buff);
-                                    } else {
-                                        console.warn('[ElevenLabs → Infobip] ⚠️ Infobip WS not open, dropping audio');
                                     }
                                     break;
                                 }
@@ -128,25 +85,12 @@ class WebSocketProxy {
                                     }
                                     break;
                                 case 'user_transcript':
-                                    console.log(`[ElevenLabs] 🎤 User said: "${message.user_transcription_event?.user_transcript || 'N/A'}"`);
+                                    console.log(`[ElevenLabs] 🎤 User: "${message.user_transcription_event?.user_transcript || ''}"`);
                                     break;
                                 case 'agent_response':
-                                    console.log(`[ElevenLabs] 🤖 Agent responding: "${message.agent_response_event?.agent_response || 'N/A'}"`);
-                                    break;
-                                case 'internal_tentative_agent_response':
-                                    console.log('[ElevenLabs] 💭 Agent is thinking...');
-                                    break;
-                                case 'user_audio_start':
-                                    console.log('[ElevenLabs] 🟢 VAD detected speech START');
-                                    break;
-                                case 'user_audio_end':
-                                    console.log('[ElevenLabs] 🔴 VAD detected speech END');
-                                    break;
-                                case 'internal_vad_detected_speech':
-                                    console.log('[ElevenLabs] 🎙️ VAD processing speech...');
+                                    console.log(`[ElevenLabs] 🤖 Agent: "${message.agent_response_event?.agent_response || ''}"`);
                                     break;
                                 default:
-                                    console.log(`[ElevenLabs] Unhandled message type: ${message.type}`);
                                     break;
                             }
                         } catch (error) {
@@ -156,11 +100,8 @@ class WebSocketProxy {
 
                     elevenLabsWs.on('error', (error) => console.error('[ElevenLabs] WebSocket error:', error));
                     elevenLabsWs.on('close', () => { 
+                        clearCommit();
                         console.log('[ElevenLabs] Disconnected');
-                        if (commitTimer) {
-                            clearTimeout(commitTimer);
-                            commitTimer = null;
-                        }
                     });
                 } catch (error) {
                     console.error('[ElevenLabs] Setup error:', error);
@@ -171,73 +112,15 @@ class WebSocketProxy {
             infobipWs.on('message', (message) => {
                 try {
                     if (typeof message === 'string') {
-                        console.log('[Infobip] Received JSON control message:', message);
-                        return; // JSON control events ignored here
+                        return; // JSON control events ignored
                     }
 
-                    // Audio data from Infobip
-                    audioPacketCount++;
-                    
-                    // Analyze audio to detect if it's silence or actual speech
-                    const audioLevel = this.analyzeAudioLevel(message);
-                    const rms = this.calculateRMS(message);
-                    const isSpeech = rms > speechThreshold;
-                    
-                    if (audioPacketCount === 1 || audioPacketCount === 50 || audioPacketCount === 100 || audioPacketCount % 100 === 0) {
-                        console.log(`[Infobip → ElevenLabs] Audio packet #${audioPacketCount} (${message.length} bytes) - RMS: ${rms.toFixed(0)}, ${audioLevel}`);
-                    }
-                    
-                    // Track when user is actually speaking
-                    if (isSpeech) {
-                        lastSpeechTime = Date.now();
-                        hasPendingAudio = true;
-                        if (audioPacketCount % 100 === 0) {
-                            console.log(`[Speech Detection] 🎤 User speaking detected (RMS: ${rms.toFixed(0)})`);
-                        }
-                    }
-
-                    const base64Audio = Buffer.from(message).toString('base64');
-                    
-                    if (!elevenLabsReady) {
-                        // Buffer audio until ElevenLabs is ready
-                        audioBuffer.push(base64Audio);
-                        if (audioPacketCount === 1) {
-                            console.warn('[Infobip → ElevenLabs] ⚠️ ElevenLabs not ready yet, buffering audio...');
-                        }
-                        return;
-                    }
-
-                    // Send audio continuously to ElevenLabs
                     if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                         elevenLabsWs.send(JSON.stringify({
                             type: 'input_audio_buffer.append',
-                            audio: base64Audio
+                            audio: Buffer.from(message).toString('base64')
                         }));
-                        
-                        // Schedule a commit only after detecting speech followed by silence
-                        if (commitTimer) {
-                            clearTimeout(commitTimer);
-                        }
-                        commitTimer = setTimeout(() => {
-                            if (elevenLabsWs?.readyState === WebSocket.OPEN && hasPendingAudio) {
-                                const timeSinceLastSpeech = lastSpeechTime ? Date.now() - lastSpeechTime : 999999;
-                                
-                                // Only commit if we detected speech and now have silence
-                                if (lastSpeechTime && timeSinceLastSpeech >= idleCommitMs) {
-                                    try {
-                                        elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-                                        elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
-                                        console.log(`[ElevenLabs] ✅ Committed audio after ${timeSinceLastSpeech}ms of silence`);
-                                        hasPendingAudio = false;
-                                        lastSpeechTime = null;
-                                    } catch (e) {
-                                        console.error('[ElevenLabs] ❌ Commit error:', e.message);
-                                    }
-                                }
-                            }
-                        }, idleCommitMs);
-                    } else {
-                        console.warn('[Infobip → ElevenLabs] ⚠️ ElevenLabs WS not open, dropping audio');
+                        scheduleCommit();
                     }
                 } catch (error) {
                     console.error('[Infobip] Error processing message:', error);
@@ -246,11 +129,8 @@ class WebSocketProxy {
 
             // Handle WebSocket closure
             infobipWs.on('close', () => {
-                console.log(`[Infobip] Client disconnected - Total audio packets: ${audioPacketCount} received, ${audioSentCount} sent`);
-                if (commitTimer) {
-                    clearTimeout(commitTimer);
-                    commitTimer = null;
-                }
+                clearCommit();
+                console.log('[Infobip] Client disconnected');
                 if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                     elevenLabsWs.close();
                 }
@@ -262,33 +142,6 @@ class WebSocketProxy {
         });
     }
 
-    generateConnectionId() {
-        return `conn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    }
-
-    calculateRMS(buffer) {
-        // Calculate RMS (Root Mean Square) of audio samples
-        // PCM 16-bit samples range from -32768 to 32767
-        let sum = 0;
-        const samples = buffer.length / 2; // 16-bit = 2 bytes per sample
-        
-        for (let i = 0; i < buffer.length - 1; i += 2) {
-            const sample = buffer.readInt16LE(i);
-            sum += sample * sample;
-        }
-        
-        return Math.sqrt(sum / samples);
-    }
-
-    analyzeAudioLevel(buffer) {
-        const rms = this.calculateRMS(buffer);
-        
-        if (rms < 100) return 'SILENCE (near zero)';
-        if (rms < 500) return 'Very quiet';
-        if (rms < 2000) return 'Quiet speech';
-        if (rms < 5000) return 'Normal speech';
-        return 'Loud speech';
-    }
 
     async getSignedUrl() {
         try {

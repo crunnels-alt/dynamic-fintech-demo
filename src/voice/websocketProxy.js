@@ -19,7 +19,10 @@ class WebSocketProxy {
             console.log('[Bridge] New Infobip connection');
             
             let elevenLabsWs = null;
+            let elevenLabsReady = false;
             let commitTimer = null;
+            let audioPacketCount = 0;
+            let audioSentCount = 0;
             const idleCommitMs = Number(process.env.ELEVENLABS_IDLE_COMMIT_MS || 500);
             const autoResponseCreate = (process.env.ELEVENLABS_AUTO_RESPONSE_CREATE ?? 'true').toLowerCase() !== 'false';
 
@@ -56,6 +59,7 @@ class WebSocketProxy {
                         console.log('[ElevenLabs] Connected to Conversational AI');
                         const initialConfig = { type: 'conversation_initiation_client_data' };
                         elevenLabsWs.send(JSON.stringify(initialConfig));
+                        console.log('[ElevenLabs] Sent conversation_initiation_client_data');
                     });
 
                     elevenLabsWs.on('message', (data) => {
@@ -63,12 +67,19 @@ class WebSocketProxy {
                             const message = JSON.parse(data);
                             switch (message.type) {
                                 case 'conversation_initiation_metadata':
-                                    console.log('[ElevenLabs] Conversation initialized');
+                                    console.log('[ElevenLabs] Conversation initialized - READY FOR AUDIO');
+                                    elevenLabsReady = true;
                                     break;
                                 case 'audio': {
                                     const buff = Buffer.from(message.audio_event.audio_base_64, 'base64');
+                                    audioSentCount++;
+                                    if (audioSentCount === 1 || audioSentCount % 50 === 0) {
+                                        console.log(`[ElevenLabs → Infobip] Audio packet #${audioSentCount} (${buff.length} bytes)`);
+                                    }
                                     if (infobipWs.readyState === WebSocket.OPEN) {
                                         infobipWs.send(buff);
+                                    } else {
+                                        console.warn('[ElevenLabs → Infobip] ⚠️ Infobip WS not open, dropping audio');
                                     }
                                     break;
                                 }
@@ -105,7 +116,21 @@ class WebSocketProxy {
             infobipWs.on('message', (message) => {
                 try {
                     if (typeof message === 'string') {
+                        console.log('[Infobip] Received JSON control message:', message);
                         return; // JSON control events ignored here
+                    }
+
+                    // Audio data from Infobip
+                    audioPacketCount++;
+                    if (audioPacketCount === 1 || audioPacketCount % 50 === 0) {
+                        console.log(`[Infobip → ElevenLabs] Audio packet #${audioPacketCount} (${message.length} bytes)`);
+                    }
+
+                    if (!elevenLabsReady) {
+                        if (audioPacketCount === 1) {
+                            console.warn('[Infobip → ElevenLabs] ⚠️ ElevenLabs not ready yet, buffering audio...');
+                        }
+                        return;
                     }
 
                     if (elevenLabsWs?.readyState === WebSocket.OPEN) {
@@ -114,6 +139,8 @@ class WebSocketProxy {
                             audio: Buffer.from(message).toString('base64')
                         }));
                         scheduleCommit();
+                    } else {
+                        console.warn('[Infobip → ElevenLabs] ⚠️ ElevenLabs WS not open, dropping audio');
                     }
                 } catch (error) {
                     console.error('[Infobip] Error processing message:', error);
@@ -123,7 +150,7 @@ class WebSocketProxy {
             // Handle WebSocket closure
             infobipWs.on('close', () => {
                 clearCommit();
-                console.log('[Infobip] Client disconnected');
+                console.log(`[Infobip] Client disconnected - Total audio packets: ${audioPacketCount} received, ${audioSentCount} sent`);
                 if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                     elevenLabsWs.close();
                 }

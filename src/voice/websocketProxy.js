@@ -24,9 +24,12 @@ class WebSocketProxy {
             let audioSentCount = 0;
             let audioBuffer = []; // Buffer to hold audio until ElevenLabs is ready
             let commitTimer = null;
+            let lastSpeechTime = null;
+            let hasPendingAudio = false;
             const idleCommitMs = 500; // Commit audio after 500ms of silence
+            const speechThreshold = 500; // RMS threshold to detect speech vs silence
             
-            console.log('[Bridge] Using ElevenLabs server-side VAD with commit logic');
+            console.log('[Bridge] Using ElevenLabs with speech-aware commit logic');
 
             // Set up ElevenLabs connection
             (async () => {
@@ -176,11 +179,21 @@ class WebSocketProxy {
                     audioPacketCount++;
                     
                     // Analyze audio to detect if it's silence or actual speech
-                    if (audioPacketCount === 1 || audioPacketCount === 50 || audioPacketCount === 100) {
-                        const audioLevel = this.analyzeAudioLevel(message);
-                        console.log(`[Infobip → ElevenLabs] Audio packet #${audioPacketCount} (${message.length} bytes) - Audio level: ${audioLevel}`);
-                    } else if (audioPacketCount % 100 === 0) {
-                        console.log(`[Infobip → ElevenLabs] Audio packet #${audioPacketCount} (${message.length} bytes)`);
+                    const audioLevel = this.analyzeAudioLevel(message);
+                    const rms = this.calculateRMS(message);
+                    const isSpeech = rms > speechThreshold;
+                    
+                    if (audioPacketCount === 1 || audioPacketCount === 50 || audioPacketCount === 100 || audioPacketCount % 100 === 0) {
+                        console.log(`[Infobip → ElevenLabs] Audio packet #${audioPacketCount} (${message.length} bytes) - RMS: ${rms.toFixed(0)}, ${audioLevel}`);
+                    }
+                    
+                    // Track when user is actually speaking
+                    if (isSpeech) {
+                        lastSpeechTime = Date.now();
+                        hasPendingAudio = true;
+                        if (audioPacketCount % 100 === 0) {
+                            console.log(`[Speech Detection] 🎤 User speaking detected (RMS: ${rms.toFixed(0)})`);
+                        }
                     }
 
                     const base64Audio = Buffer.from(message).toString('base64');
@@ -201,18 +214,25 @@ class WebSocketProxy {
                             audio: base64Audio
                         }));
                         
-                        // Schedule a commit after idle period (critical for speech detection!)
+                        // Schedule a commit only after detecting speech followed by silence
                         if (commitTimer) {
                             clearTimeout(commitTimer);
                         }
                         commitTimer = setTimeout(() => {
-                            if (elevenLabsWs?.readyState === WebSocket.OPEN) {
-                                try {
-                                    elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-                                    elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
-                                    console.log('[ElevenLabs] ✅ Committed audio buffer and requested response');
-                                } catch (e) {
-                                    console.error('[ElevenLabs] ❌ Commit error:', e.message);
+                            if (elevenLabsWs?.readyState === WebSocket.OPEN && hasPendingAudio) {
+                                const timeSinceLastSpeech = lastSpeechTime ? Date.now() - lastSpeechTime : 999999;
+                                
+                                // Only commit if we detected speech and now have silence
+                                if (lastSpeechTime && timeSinceLastSpeech >= idleCommitMs) {
+                                    try {
+                                        elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+                                        elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
+                                        console.log(`[ElevenLabs] ✅ Committed audio after ${timeSinceLastSpeech}ms of silence`);
+                                        hasPendingAudio = false;
+                                        lastSpeechTime = null;
+                                    } catch (e) {
+                                        console.error('[ElevenLabs] ❌ Commit error:', e.message);
+                                    }
                                 }
                             }
                         }, idleCommitMs);
@@ -246,8 +266,8 @@ class WebSocketProxy {
         return `conn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
 
-    analyzeAudioLevel(buffer) {
-        // Calculate RMS (Root Mean Square) of audio samples to detect speech
+    calculateRMS(buffer) {
+        // Calculate RMS (Root Mean Square) of audio samples
         // PCM 16-bit samples range from -32768 to 32767
         let sum = 0;
         const samples = buffer.length / 2; // 16-bit = 2 bytes per sample
@@ -257,8 +277,11 @@ class WebSocketProxy {
             sum += sample * sample;
         }
         
-        const rms = Math.sqrt(sum / samples);
-        const dbLevel = 20 * Math.log10(rms / 32768); // Convert to dB
+        return Math.sqrt(sum / samples);
+    }
+
+    analyzeAudioLevel(buffer) {
+        const rms = this.calculateRMS(buffer);
         
         if (rms < 100) return 'SILENCE (near zero)';
         if (rms < 500) return 'Very quiet';

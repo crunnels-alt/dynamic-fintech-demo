@@ -20,37 +20,10 @@ class WebSocketProxy {
             
             let elevenLabsWs = null;
             let elevenLabsReady = false;
-            let commitTimer = null;
             let audioPacketCount = 0;
             let audioSentCount = 0;
-            // Reduce timeout to 200ms so it can fire between speech pauses
-            const idleCommitMs = Number(process.env.ELEVENLABS_IDLE_COMMIT_MS || 200);
-            const autoResponseCreate = (process.env.ELEVENLABS_AUTO_RESPONSE_CREATE ?? 'true').toLowerCase() !== 'false';
-
-            const clearCommit = () => { 
-                if (commitTimer) { 
-                    clearTimeout(commitTimer); 
-                    commitTimer = null; 
-                } 
-            };
-
-            const scheduleCommit = () => {
-                clearCommit();
-                commitTimer = setTimeout(() => {
-                    if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
-                        try {
-                            console.log(`[ElevenLabs] Committing audio buffer after ${idleCommitMs}ms silence...`);
-                            elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-                            if (autoResponseCreate) {
-                                console.log('[ElevenLabs] Requesting response from agent...');
-                                elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
-                            }
-                        } catch (e) {
-                            console.error('[Bridge] commit error:', e.message || e);
-                        }
-                    }
-                }, idleCommitMs);
-            };
+            
+            console.log('[Bridge] Using ElevenLabs server-side VAD for speech detection');
 
             // Set up ElevenLabs connection
             (async () => {
@@ -124,13 +97,22 @@ class WebSocketProxy {
                                     }
                                     break;
                                 case 'user_transcript':
-                                    console.log(`[ElevenLabs] User said: "${message.user_transcription_event?.user_transcript || 'N/A'}"`);
+                                    console.log(`[ElevenLabs] 🎤 User said: "${message.user_transcription_event?.user_transcript || 'N/A'}"`);
                                     break;
                                 case 'agent_response':
-                                    console.log(`[ElevenLabs] Agent responding: "${message.agent_response_event?.agent_response || 'N/A'}"`);
+                                    console.log(`[ElevenLabs] 🤖 Agent responding: "${message.agent_response_event?.agent_response || 'N/A'}"`);
                                     break;
                                 case 'internal_tentative_agent_response':
-                                    console.log('[ElevenLabs] Agent is thinking...');
+                                    console.log('[ElevenLabs] 💭 Agent is thinking...');
+                                    break;
+                                case 'user_audio_start':
+                                    console.log('[ElevenLabs] 🟢 VAD detected speech START');
+                                    break;
+                                case 'user_audio_end':
+                                    console.log('[ElevenLabs] 🔴 VAD detected speech END');
+                                    break;
+                                case 'internal_vad_detected_speech':
+                                    console.log('[ElevenLabs] 🎙️ VAD processing speech...');
                                     break;
                                 default:
                                     console.log(`[ElevenLabs] Unhandled message type: ${message.type}`);
@@ -143,7 +125,6 @@ class WebSocketProxy {
 
                     elevenLabsWs.on('error', (error) => console.error('[ElevenLabs] WebSocket error:', error));
                     elevenLabsWs.on('close', () => { 
-                        clearCommit(); 
                         console.log('[ElevenLabs] Disconnected'); 
                     });
                 } catch (error) {
@@ -177,7 +158,7 @@ class WebSocketProxy {
                             type: 'input_audio_buffer.append',
                             audio: Buffer.from(message).toString('base64')
                         }));
-                        scheduleCommit();
+                        // ElevenLabs VAD will automatically detect speech and respond
                     } else {
                         console.warn('[Infobip → ElevenLabs] ⚠️ ElevenLabs WS not open, dropping audio');
                     }
@@ -188,7 +169,6 @@ class WebSocketProxy {
 
             // Handle WebSocket closure
             infobipWs.on('close', () => {
-                clearCommit();
                 console.log(`[Infobip] Client disconnected - Total audio packets: ${audioPacketCount} received, ${audioSentCount} sent`);
                 if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                     elevenLabsWs.close();

@@ -12,7 +12,8 @@
       "Bash(node:*)",
       "Bash(echo:*)",
       "Bash(railway status:*)",
-      "WebFetch(domain:elevenlabs.io)"
+      "WebFetch(domain:elevenlabs.io)",
+      "Bash(timeout 10 railway logs:*)"
     ],
     "deny": [],
     "ask": []

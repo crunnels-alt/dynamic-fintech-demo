@@ -23,8 +23,10 @@ class WebSocketProxy {
             let audioPacketCount = 0;
             let audioSentCount = 0;
             let audioBuffer = []; // Buffer to hold audio until ElevenLabs is ready
+            let commitTimer = null;
+            const idleCommitMs = 500; // Commit audio after 500ms of silence
             
-            console.log('[Bridge] Using ElevenLabs server-side VAD for speech detection');
+            console.log('[Bridge] Using ElevenLabs server-side VAD with commit logic');
 
             // Set up ElevenLabs connection
             (async () => {
@@ -151,7 +153,11 @@ class WebSocketProxy {
 
                     elevenLabsWs.on('error', (error) => console.error('[ElevenLabs] WebSocket error:', error));
                     elevenLabsWs.on('close', () => { 
-                        console.log('[ElevenLabs] Disconnected'); 
+                        console.log('[ElevenLabs] Disconnected');
+                        if (commitTimer) {
+                            clearTimeout(commitTimer);
+                            commitTimer = null;
+                        }
                     });
                 } catch (error) {
                     console.error('[ElevenLabs] Setup error:', error);
@@ -194,7 +200,22 @@ class WebSocketProxy {
                             type: 'input_audio_buffer.append',
                             audio: base64Audio
                         }));
-                        // ElevenLabs VAD will automatically detect speech and respond
+                        
+                        // Schedule a commit after idle period (critical for speech detection!)
+                        if (commitTimer) {
+                            clearTimeout(commitTimer);
+                        }
+                        commitTimer = setTimeout(() => {
+                            if (elevenLabsWs?.readyState === WebSocket.OPEN) {
+                                try {
+                                    elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+                                    elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
+                                    console.log('[ElevenLabs] ✅ Committed audio buffer and requested response');
+                                } catch (e) {
+                                    console.error('[ElevenLabs] ❌ Commit error:', e.message);
+                                }
+                            }
+                        }, idleCommitMs);
                     } else {
                         console.warn('[Infobip → ElevenLabs] ⚠️ ElevenLabs WS not open, dropping audio');
                     }
@@ -206,6 +227,10 @@ class WebSocketProxy {
             // Handle WebSocket closure
             infobipWs.on('close', () => {
                 console.log(`[Infobip] Client disconnected - Total audio packets: ${audioPacketCount} received, ${audioSentCount} sent`);
+                if (commitTimer) {
+                    clearTimeout(commitTimer);
+                    commitTimer = null;
+                }
                 if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                     elevenLabsWs.close();
                 }

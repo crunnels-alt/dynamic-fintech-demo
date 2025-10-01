@@ -57,18 +57,32 @@ class WebSocketProxy {
 
                     elevenLabsWs.on('open', () => {
                         console.log('[ElevenLabs] Connected to Conversational AI');
-                        const initialConfig = { type: 'conversation_initiation_client_data' };
+                        const initialConfig = { 
+                            type: 'conversation_initiation_client_data',
+                            conversation_config_override: {
+                                agent: {
+                                    prompt: {
+                                        prompt: "You are a helpful AI assistant for Infobip Capital, a modern fintech platform. Greet the caller warmly and ask how you can help them today."
+                                    },
+                                    first_message: "Hello! Welcome to Infobip Capital. How can I assist you today?"
+                                }
+                            }
+                        };
                         elevenLabsWs.send(JSON.stringify(initialConfig));
-                        console.log('[ElevenLabs] Sent conversation_initiation_client_data');
+                        console.log('[ElevenLabs] Sent conversation_initiation_client_data with greeting');
                     });
 
                     elevenLabsWs.on('message', (data) => {
                         try {
                             const message = JSON.parse(data);
+                            console.log(`[ElevenLabs] Received message type: ${message.type}`);
                             switch (message.type) {
                                 case 'conversation_initiation_metadata':
                                     console.log('[ElevenLabs] Conversation initialized - READY FOR AUDIO');
                                     elevenLabsReady = true;
+                                    // Trigger initial greeting
+                                    console.log('[ElevenLabs] Triggering initial greeting...');
+                                    elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
                                     break;
                                 case 'audio': {
                                     const buff = Buffer.from(message.audio_event.audio_base_64, 'base64');
@@ -94,7 +108,17 @@ class WebSocketProxy {
                                         elevenLabsWs.send(JSON.stringify({ type: 'pong', event_id: message.ping_event.event_id }));
                                     }
                                     break;
+                                case 'user_transcript':
+                                    console.log(`[ElevenLabs] User said: "${message.user_transcription_event?.user_transcript || 'N/A'}"`);
+                                    break;
+                                case 'agent_response':
+                                    console.log(`[ElevenLabs] Agent responding: "${message.agent_response_event?.agent_response || 'N/A'}"`);
+                                    break;
+                                case 'internal_tentative_agent_response':
+                                    console.log('[ElevenLabs] Agent is thinking...');
+                                    break;
                                 default:
+                                    console.log(`[ElevenLabs] Unhandled message type: ${message.type}`);
                                     break;
                             }
                         } catch (error) {

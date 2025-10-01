@@ -999,7 +999,14 @@ class WebSocketProxy {
         infobipWs.on('message', (message) => {
             try {
                 if (typeof message === 'string') {
-                    // JSON event from Infobip - ignore for now (following tutorial approach)
+                    // JSON event from Infobip - log it to see what we're getting
+                    console.log(`📩 [${connectionId}] Infobip JSON message:`, message);
+                    try {
+                        const jsonMsg = JSON.parse(message);
+                        console.log(`📩 [${connectionId}] Infobip message type: ${jsonMsg.type || 'unknown'}`);
+                    } catch (e) {
+                        console.log(`📩 [${connectionId}] Could not parse Infobip JSON:`, e.message);
+                    }
                     return;
                 }
 

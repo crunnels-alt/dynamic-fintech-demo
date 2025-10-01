@@ -26,6 +26,17 @@ class WebSocketProxy {
             autoResponseCreate: parseBooleanEnv(process.env.ELEVENLABS_AUTO_RESPONSE_CREATE, true),
             audioLogIntervalMs: parseInt(process.env.ELEVENLABS_AUDIO_LOG_INTERVAL_MS, 10) || 1000,
             audioLogging: parseBooleanEnv(process.env.ELEVENLABS_AUDIO_LOGGING, true),
+            // TTS -> Infobip keepalive (PCM 16 kHz silence after TTS stops)
+            ttsKeepaliveEnabled: parseBooleanEnv(process.env.ELEVENLABS_TTS_KEEPALIVE, true),
+            ttsKeepaliveTotalMs: parseInt(process.env.ELEVENLABS_TTS_KEEPALIVE_TOTAL_MS, 10) || 30000,
+            ttsKeepaliveFrameMs: parseInt(process.env.ELEVENLABS_TTS_KEEPALIVE_FRAME_MS, 10) || 20,
+            ttsKeepaliveIntervalMs: parseInt(process.env.ELEVENLABS_TTS_KEEPALIVE_INTERVAL_MS, 10) || 20,
+            // Continuous background keepalive (always send silence when not TTS)
+            continuousKeepalive: parseBooleanEnv(process.env.ELEVENLABS_CONTINUOUS_KEEPALIVE, true),
+            // Optional resampling of ElevenLabs TTS to 16k PCM
+            resampleTtsTo16k: parseBooleanEnv(process.env.ELEVENLABS_TTS_RESAMPLE_TO_16K, true),
+            // Diagnostic logging
+            detailedTiming: parseBooleanEnv(process.env.ELEVENLABS_DETAILED_TIMING, true),
         };
 
         this.server = http.createServer();
@@ -171,6 +182,10 @@ class WebSocketProxy {
                 clearTimeout(conn.commitTimer);
                 conn.commitTimer = null;
             }
+            if (conn && conn.keepaliveTimer) {
+                clearInterval(conn.keepaliveTimer);
+                conn.keepaliveTimer = null;
+            }
             if (code !== 1000) {
                 console.error(`⚠️  [${connectionId}] Abnormal ElevenLabs disconnection`);
             }
@@ -184,6 +199,61 @@ class WebSocketProxy {
      * @param {WebSocket} elevenLabsWs - ElevenLabs WebSocket
      */
     setupInfobipMessageHandlers(connectionId, infobipWs, elevenLabsWs) {
+        const conn = this.getOrInitConnState(connectionId);
+        
+        // Start continuous background keepalive if enabled
+        if (this.config.continuousKeepalive && conn) {
+            console.log(`🔄 [${connectionId}] Starting continuous background keepalive (${this.config.ttsKeepaliveIntervalMs}ms interval)`);
+            
+            conn.backgroundKeepaliveTimer = setInterval(() => {
+                if (infobipWs.readyState !== WebSocket.OPEN) {
+                    return;
+                }
+                
+                const now = Date.now();
+                const timeSinceLastTts = now - (conn.lastTtsAt || 0);
+                
+                // Send silence if no TTS has been sent recently (>100ms)
+                // This ensures continuous audio stream even when agent isn't speaking
+                if (timeSinceLastTts > 100) {
+                    const silence = this.makeSilenceFrame16k(this.config.ttsKeepaliveFrameMs);
+                    try {
+                        infobipWs.send(silence);
+                        conn.silenceSendCount = (conn.silenceSendCount || 0) + 1;
+                        
+                        // Log every 50 frames (every ~1 second at 20ms intervals)
+                        if (this.config.detailedTiming && conn.silenceSendCount % 50 === 0) {
+                            console.log(`🔄 [${connectionId}] Background keepalive: sent ${conn.silenceSendCount} silence frames (${timeSinceLastTts}ms since last TTS)`);
+                        }
+                    } catch (e) {
+                        // Silence send errors to avoid spam
+                    }
+                }
+            }, this.config.ttsKeepaliveIntervalMs);
+        }
+        
+        // WebSocket ping/pong for connection health
+        infobipWs.on('ping', () => {
+            try {
+                infobipWs.pong();
+            } catch (e) {
+                // Ignore pong errors
+            }
+        });
+        
+        // Send periodic pings to Infobip
+        if (conn) {
+            conn.pingInterval = setInterval(() => {
+                if (infobipWs.readyState === WebSocket.OPEN) {
+                    try {
+                        infobipWs.ping();
+                    } catch (e) {
+                        // Ignore ping errors
+                    }
+                }
+            }, 5000);
+        }
+
         // Handle messages from Infobip
         infobipWs.on('message', (message) => {
             try {
@@ -199,14 +269,46 @@ class WebSocketProxy {
             }
         });
 
-        // Handle WebSocket closure
-        infobipWs.on('close', () => {
-            console.log(`📞 [${connectionId}] Infobip client disconnected`);
-
+        // Handle WebSocket closure with enhanced diagnostics
+        infobipWs.on('close', (code, reason) => {
             const conn = this.activeConnections.get(connectionId);
-            if (conn && conn.commitTimer) {
-                clearTimeout(conn.commitTimer);
-                conn.commitTimer = null;
+            const duration = conn ? Date.now() - conn.startTime : 0;
+            const reasonText = Buffer.isBuffer(reason) ? reason.toString() : (reason || 'No reason provided');
+            
+            console.log(`📞 [${connectionId}] Infobip WebSocket closed after ${(duration/1000).toFixed(1)}s`);
+            console.log(`📞 [${connectionId}] Close code: ${code}, reason: ${reasonText}`);
+            
+            // Detect premature closure (less than 10 seconds)
+            if (duration > 0 && duration < 10000) {
+                console.error(`🚨 [${connectionId}] PREMATURE CLOSURE after only ${(duration/1000).toFixed(1)}s!`);
+                if (conn) {
+                    const timeSinceLastTts = Date.now() - (conn.lastTtsAt || 0);
+                    const timeSinceLastUserAudio = Date.now() - (conn.lastUserAudioAt || 0);
+                    console.error(`🚨 [${connectionId}] Time since last TTS: ${(timeSinceLastTts/1000).toFixed(1)}s`);
+                    console.error(`🚨 [${connectionId}] Time since last user audio: ${(timeSinceLastUserAudio/1000).toFixed(1)}s`);
+                    console.error(`🚨 [${connectionId}] Total TTS sent: ${conn.ttsSendCount || 0}`);
+                    console.error(`🚨 [${connectionId}] Total silence frames sent: ${conn.silenceSendCount || 0}`);
+                }
+            }
+
+            if (conn) {
+                // Clean up all timers
+                if (conn.commitTimer) {
+                    clearTimeout(conn.commitTimer);
+                    conn.commitTimer = null;
+                }
+                if (conn.keepaliveTimer) {
+                    clearInterval(conn.keepaliveTimer);
+                    conn.keepaliveTimer = null;
+                }
+                if (conn.backgroundKeepaliveTimer) {
+                    clearInterval(conn.backgroundKeepaliveTimer);
+                    conn.backgroundKeepaliveTimer = null;
+                }
+                if (conn.pingInterval) {
+                    clearInterval(conn.pingInterval);
+                    conn.pingInterval = null;
+                }
             }
 
             if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
@@ -242,6 +344,32 @@ class WebSocketProxy {
         if (conn.hasPendingAudio === undefined) {
             conn.hasPendingAudio = false;
         }
+        // Keepalive/TTS state
+        if (conn.keepaliveTimer === undefined) {
+            conn.keepaliveTimer = null;
+        }
+        if (conn.backgroundKeepaliveTimer === undefined) {
+            conn.backgroundKeepaliveTimer = null;
+        }
+        if (conn.lastTtsAt === undefined) {
+            conn.lastTtsAt = 0;
+        }
+        if (conn.loggedTtsRate === undefined) {
+            conn.loggedTtsRate = null;
+        }
+        // Diagnostic timing
+        if (conn.lastUserAudioAt === undefined) {
+            conn.lastUserAudioAt = 0;
+        }
+        if (conn.prevUserAudioAt === undefined) {
+            conn.prevUserAudioAt = 0;
+        }
+        if (conn.ttsSendCount === undefined) {
+            conn.ttsSendCount = 0;
+        }
+        if (conn.silenceSendCount === undefined) {
+            conn.silenceSendCount = 0;
+        }
         return conn;
     }
 
@@ -253,6 +381,21 @@ class WebSocketProxy {
             const conn = this.getOrInitConnState(connectionId);
             if (!conn) return;
 
+            const now = Date.now();
+            conn.lastUserAudioAt = now;
+
+            // Detailed timing logs
+            if (this.config.detailedTiming) {
+                const gapSinceLastUserAudio = conn.prevUserAudioAt ? now - conn.prevUserAudioAt : 0;
+                if (gapSinceLastUserAudio > 1000 || !conn.prevUserAudioAt) {
+                    console.log(`🎤 [${connectionId}] User audio received (${message.length} bytes)`);
+                    if (conn.prevUserAudioAt) {
+                        console.log(`🎤 [${connectionId}] Gap since last user audio: ${gapSinceLastUserAudio}ms`);
+                    }
+                }
+                conn.prevUserAudioAt = now;
+            }
+
             if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
                 const base64 = Buffer.from(message).toString('base64');
                 this.sendAudioAppend(connectionId, elevenLabsWs, base64);
@@ -263,7 +406,6 @@ class WebSocketProxy {
                 conn.audioStats.chunksForwarded += 1;
 
                 // Throttled summary log once per second
-                const now = Date.now();
                 if (this.config.audioLogging && now - (conn.audioStats.lastLogAt || 0) >= (Number(this.config.audioLogIntervalMs) || 1000)) {
                     const kb = (conn.audioStats.bytesForwarded / 1024).toFixed(1);
                     console.log(`🎤 [${connectionId}] Forwarded ${conn.audioStats.chunksForwarded} chunks (${kb} KB) to ElevenLabs in last second`);
@@ -280,7 +422,6 @@ class WebSocketProxy {
                 const conn = this.getOrInitConnState(connectionId);
                 if (!conn) return;
                 conn.audioStats.drops += 1;
-                const now = Date.now();
                 if (this.config.audioLogging && now - (conn.audioStats.lastLogAt || 0) >= (Number(this.config.audioLogIntervalMs) || 1000)) {
                     console.log(`⚠️  [${connectionId}] ElevenLabs WS not ready; dropped ${conn.audioStats.drops} chunks in last second`);
                     conn.audioStats.bytesForwarded = 0;
@@ -354,6 +495,90 @@ class WebSocketProxy {
             console.log(`✅ [${connectionId}] Committed audio buffer${this.config.autoResponseCreate ? ' and requested agent response' : ''}`);
         } catch (err) {
             console.error(`❌ [${connectionId}] Failed to commit/request response:`, err.message || err);
+        }
+    }
+
+    /**
+     * Internal: generate a PCM 16kHz silence frame of given duration (ms)
+     */
+    makeSilenceFrame16k(durationMs) {
+        const samples = Math.max(1, Math.floor(16000 * (durationMs / 1000)));
+        return Buffer.alloc(samples * 2); // 16-bit PCM LE zeros
+    }
+
+    /**
+     * Internal: start or refresh a TTS keepalive after receiving TTS audio
+     */
+    scheduleTtsKeepalive(connectionId, infobipWs) {
+        if (!this.config.ttsKeepaliveEnabled) return;
+        const conn = this.getOrInitConnState(connectionId);
+        if (!conn) return;
+        conn.lastTtsAt = Date.now();
+
+        if (this.config.detailedTiming) {
+            console.log(`⏱️  [${connectionId}] TTS received, last TTS timestamp updated to ${conn.lastTtsAt}`);
+        }
+
+        const sendSilenceIfIdle = () => {
+            if (!infobipWs || infobipWs.readyState !== WebSocket.OPEN) return;
+            const now = Date.now();
+            const elapsed = now - conn.lastTtsAt;
+            // Start immediately (elapsed >= 0) and continue for configured duration
+            if (elapsed >= 0 && elapsed <= this.config.ttsKeepaliveTotalMs) {
+                const frame = this.makeSilenceFrame16k(this.config.ttsKeepaliveFrameMs);
+                try {
+                    infobipWs.send(frame);
+                    conn.silenceSendCount = (conn.silenceSendCount || 0) + 1;
+                    
+                    // Log keepalive activity every second
+                    if (this.config.detailedTiming && conn.silenceSendCount % 50 === 0) {
+                        console.log(`⏱️  [${connectionId}] Keepalive: sent ${conn.silenceSendCount} silence frames (${elapsed}ms since last TTS)`);
+                    }
+                } catch (e) {
+                    // Ignore send errors on keepalive
+                }
+            }
+            if (now - conn.lastTtsAt > this.config.ttsKeepaliveTotalMs) {
+                if (this.config.detailedTiming) {
+                    console.log(`⏱️  [${connectionId}] Keepalive period ended after ${this.config.ttsKeepaliveTotalMs}ms`);
+                }
+                clearInterval(conn.keepaliveTimer);
+                conn.keepaliveTimer = null;
+            }
+        };
+
+        if (!conn.keepaliveTimer) {
+            conn.keepaliveTimer = setInterval(sendSilenceIfIdle, Math.max(20, this.config.ttsKeepaliveIntervalMs));
+        }
+    }
+
+    /**
+     * Internal: linear resample PCM16 LE to 16 kHz if needed
+     */
+    resamplePcm16To16k(buffer, fromRate) {
+        const toRate = 16000;
+        if (!this.config.resampleTtsTo16k || !fromRate || fromRate === toRate) return buffer;
+        try {
+            const inView = new Int16Array(buffer.buffer, buffer.byteOffset, Math.floor(buffer.length / 2));
+            const inLen = inView.length;
+            if (inLen === 0) return buffer;
+            const outLen = Math.max(1, Math.round(inLen * toRate / fromRate));
+            const outBuf = Buffer.alloc(outLen * 2);
+            const outView = new DataView(outBuf.buffer, outBuf.byteOffset, outBuf.byteLength);
+            for (let i = 0; i < outLen; i++) {
+                const t = (i * (inLen - 1)) / (outLen - 1);
+                const i0 = Math.floor(t);
+                const i1 = Math.min(i0 + 1, inLen - 1);
+                const a = t - i0;
+                const s0 = inView[i0];
+                const s1 = inView[i1];
+                const s = Math.max(-32768, Math.min(32767, Math.round(s0 * (1 - a) + s1 * a)));
+                outView.setInt16(i * 2, s, true);
+            }
+            return outBuf;
+        } catch (e) {
+            console.error('❌ Resample error, forwarding original audio:', e.message || e);
+            return buffer;
         }
     }
 
@@ -741,6 +966,10 @@ class WebSocketProxy {
                         clearTimeout(conn.commitTimer);
                         conn.commitTimer = null;
                     }
+                    if (conn && conn.keepaliveTimer) {
+                        clearInterval(conn.keepaliveTimer);
+                        conn.keepaliveTimer = null;
+                    }
 
                     if (code !== 1000) {
                         console.error(`⚠️  [${connectionId}] ❌ ABNORMAL ElevenLabs disconnection with code ${code}`);
@@ -806,17 +1035,46 @@ class WebSocketProxy {
                 console.log(`🤖 [${connectionId}] Conversation initialized`);
                 break;
 
-            case 'audio':
-                // Forward audio from ElevenLabs to Infobip
-                console.log(`🎵 [${connectionId}] Received audio from ElevenLabs, forwarding to Infobip`);
-                const audioBuffer = Buffer.from(message.audio_event.audio_base_64, 'base64');
+            case 'audio': {
+                // Forward audio from ElevenLabs to Infobip, resampling to 16k if needed
+                const conn = this.getOrInitConnState(connectionId);
+                const now = Date.now();
+                const sampleRate = message.audio_event?.sample_rate_hz || message.audio_event?.sample_rate || 16000;
+                
+                if (this.config.audioLogging) {
+                    if (conn && conn.loggedTtsRate !== sampleRate) {
+                        console.log(`🎵 [${connectionId}] ElevenLabs TTS sample_rate: ${sampleRate} Hz`);
+                        conn.loggedTtsRate = sampleRate;
+                    }
+                }
+                
+                // Detailed timing logs
+                if (this.config.detailedTiming && conn) {
+                    const gapSinceLastTts = conn.lastTtsAt ? now - conn.lastTtsAt : 0;
+                    if (gapSinceLastTts > 1000 || !conn.lastTtsAt) {
+                        console.log(`🎵 [${connectionId}] TTS audio received at ${now}`);
+                        if (conn.lastTtsAt) {
+                            console.log(`🎵 [${connectionId}] Gap since last TTS: ${gapSinceLastTts}ms`);
+                        }
+                    }
+                }
+                
+                const raw = Buffer.from(message.audio_event.audio_base_64, 'base64');
+                const audioBuffer = (sampleRate !== 16000) ? this.resamplePcm16To16k(raw, sampleRate) : raw;
+                
                 if (infobipWs.readyState === WebSocket.OPEN) {
                     infobipWs.send(audioBuffer);
-                    console.log(`📤 [${connectionId}] Sent ${audioBuffer.length} bytes of audio to Infobip`);
+                    if (conn) {
+                        conn.ttsSendCount = (conn.ttsSendCount || 0) + 1;
+                    }
+                    console.log(`📤 [${connectionId}] Sent ${audioBuffer.length} bytes of TTS audio to Infobip (count: ${conn?.ttsSendCount || 0})`);
+                    // Schedule keepalive after TTS so Infobip doesn't drop immediately
+                    this.scheduleTtsKeepalive(connectionId, infobipWs);
                 } else {
                     console.log(`⚠️  [${connectionId}] Infobip WebSocket not ready, audio dropped`);
                 }
                 break;
+            }
 
             case 'agent_response_correction':
             case 'interruption':

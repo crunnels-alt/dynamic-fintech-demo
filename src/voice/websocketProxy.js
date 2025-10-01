@@ -158,7 +158,7 @@ class WebSocketProxy {
                     };
 
                     console.log(`📤 [${connectionId}] Sending personalized greeting for ${userContext.name} with balance ${balance}`);
-                    console.log(`🔍 [${connectionId}] Full config being sent:`, JSON.stringify(conversationData, null, 2));
+                    console.log(`🔍 [${connectionId}] Full config being sent:`, safeStringify(conversationData, 2));
                 } else {
                     conversationData = {
                         type: "conversation_initiation_client_data",
@@ -473,7 +473,7 @@ class WebSocketProxy {
             case 'interruption':
                 // Handle interruptions by clearing the audio queue
                 if (infobipWs.readyState === WebSocket.OPEN) {
-                    infobipWs.send(JSON.stringify({ action: 'clear' }));
+                    infobipWs.send(safeStringify({ action: 'clear' }));
                 }
                 break;
 

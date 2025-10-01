@@ -12,15 +12,34 @@ function sanitizeString(str) {
     if (typeof str !== 'string') return str;
 
     // Replace unpaired surrogates and other invalid Unicode with replacement character
-    return str.replace(/[\uD800-\uDFFF]/g, (match) => {
-        // Check if it's a valid surrogate pair
-        const code = match.charCodeAt(0);
+    let result = '';
+    for (let i = 0; i < str.length; i++) {
+        const code = str.charCodeAt(i);
+
+        // Check for high surrogate (0xD800-0xDBFF)
         if (code >= 0xD800 && code <= 0xDBFF) {
-            // High surrogate - should be followed by low surrogate
-            return '\uFFFD'; // Unicode replacement character
+            // High surrogate should be followed by low surrogate
+            if (i + 1 < str.length) {
+                const nextCode = str.charCodeAt(i + 1);
+                if (nextCode >= 0xDC00 && nextCode <= 0xDFFF) {
+                    // Valid surrogate pair - keep both characters
+                    result += str[i] + str[i + 1];
+                    i++; // Skip the next character
+                    continue;
+                }
+            }
+            // Unpaired high surrogate - replace with replacement character
+            result += '\uFFFD';
+        } else if (code >= 0xDC00 && code <= 0xDFFF) {
+            // Unpaired low surrogate - replace with replacement character
+            result += '\uFFFD';
+        } else {
+            // Normal character
+            result += str[i];
         }
-        return match;
-    });
+    }
+
+    return result;
 }
 
 /**

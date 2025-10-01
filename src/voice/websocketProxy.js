@@ -23,7 +23,8 @@ class WebSocketProxy {
             let commitTimer = null;
             let audioPacketCount = 0;
             let audioSentCount = 0;
-            const idleCommitMs = Number(process.env.ELEVENLABS_IDLE_COMMIT_MS || 500);
+            // Reduce timeout to 200ms so it can fire between speech pauses
+            const idleCommitMs = Number(process.env.ELEVENLABS_IDLE_COMMIT_MS || 200);
             const autoResponseCreate = (process.env.ELEVENLABS_AUTO_RESPONSE_CREATE ?? 'true').toLowerCase() !== 'false';
 
             const clearCommit = () => { 
@@ -38,8 +39,10 @@ class WebSocketProxy {
                 commitTimer = setTimeout(() => {
                     if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
                         try {
+                            console.log(`[ElevenLabs] Committing audio buffer after ${idleCommitMs}ms silence...`);
                             elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
                             if (autoResponseCreate) {
+                                console.log('[ElevenLabs] Requesting response from agent...');
                                 elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
                             }
                         } catch (e) {
@@ -64,12 +67,24 @@ class WebSocketProxy {
                                     prompt: {
                                         prompt: "You are a helpful AI assistant for Infobip Capital, a modern fintech platform. Greet the caller warmly and ask how you can help them today."
                                     },
-                                    first_message: "Hello! Welcome to Infobip Capital. How can I assist you today?"
+                                    first_message: "Hello! Welcome to Infobip Capital. How can I assist you today?",
+                                    language: "en"
+                                },
+                                tts: {
+                                    model_id: "eleven_turbo_v2_5"
+                                },
+                                asr: {
+                                    quality: "high",
+                                    keywords: []
+                                },
+                                vad: {
+                                    enabled: true,
+                                    threshold: 0.5
                                 }
                             }
                         };
                         elevenLabsWs.send(JSON.stringify(initialConfig));
-                        console.log('[ElevenLabs] Sent conversation_initiation_client_data with greeting');
+                        console.log('[ElevenLabs] Sent conversation_initiation_client_data with VAD enabled');
                     });
 
                     elevenLabsWs.on('message', (data) => {

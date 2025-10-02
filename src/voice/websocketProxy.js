@@ -55,8 +55,16 @@ class WebSocketProxy {
 
                     elevenLabsWs.on('open', () => {
                         console.log('[ElevenLabs] Connected to Conversational AI');
-                        const initialConfig = { type: 'conversation_initiation_client_data' };
+                        const initialConfig = {
+                            type: 'conversation_initiation_client_data',
+                            conversation_config_override: {
+                                agent: {
+                                    first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI assistant. How can I help you today?"
+                                }
+                            }
+                        };
                         elevenLabsWs.send(JSON.stringify(initialConfig));
+                        console.log('[ElevenLabs] Sent conversation config with first_message');
                     });
 
                     elevenLabsWs.on('message', (data) => {

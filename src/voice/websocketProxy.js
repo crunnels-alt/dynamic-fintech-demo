@@ -48,7 +48,7 @@ class WebSocketProxy {
                                     if (infobipWs.readyState === WebSocket.OPEN) {
                                         infobipWs.send(buff);
                                     } else {
-                                        console.warn('[ElevenLabs → Infobip] Infobip WS not open, dropping audio');
+                                        console.warn('[ElevenLabs → Infobip] Cannot send audio - Infobip WS not open');
                                     }
                                     break;
                                 case 'agent_response_correction':

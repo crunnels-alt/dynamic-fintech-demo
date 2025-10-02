@@ -54,28 +54,6 @@ class CallsHandler {
                 status: 'connected'
             });
 
-            // 🚀 NEW: Pre-establish ElevenLabs connection BEFORE creating dialog
-            try {
-                const WebSocketProxy = require('./websocketProxy');
-                const wsProxyInstance = WebSocketProxy.getInstance();
-
-                if (wsProxyInstance) {
-                    console.log(`🚀 [${callId}] Pre-establishing ElevenLabs connection...`);
-                    const elevenLabsConnection = await wsProxyInstance.prepareElevenLabsConnection(callId, userContext);
-
-                    if (elevenLabsConnection) {
-                        console.log(`✅ [${callId}] ElevenLabs connection ready, now creating dialog`);
-                    } else {
-                        console.log(`⚠️  [${callId}] Could not pre-establish ElevenLabs connection, continuing anyway`);
-                    }
-                } else {
-                    console.log(`⚠️  [${callId}] WebSocket proxy not initialized yet`);
-                }
-            } catch (elevenLabsError) {
-                console.error(`⚠️  [${callId}] Failed to pre-establish ElevenLabs:`, elevenLabsError.message);
-                // Continue anyway - will fall back to on-demand connection
-            }
-
             // Create dialog connecting the call to our WebSocket endpoint
             try {
                 await this.createDialogWithAI(callId, userContext);

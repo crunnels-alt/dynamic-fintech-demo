@@ -17,44 +17,12 @@ class WebSocketProxy {
     setupWebSocketServer() {
         this.wss.on('connection', (infobipWs) => {
             console.log('[Bridge] New Infobip connection');
-            
+
             let elevenLabsWs = null;
-            let commitTimer = null;
-            let recvPackets = 0;
-            let appendSent = 0;
-            let commitSent = 0;
-            const idleCommitMs = Number(process.env.ELEVENLABS_IDLE_COMMIT_MS || 500);
-            const autoResponseCreate = (process.env.ELEVENLABS_AUTO_RESPONSE_CREATE ?? 'true').toLowerCase() !== 'false';
 
-            const clearCommit = () => { 
-                if (commitTimer) { 
-                    clearTimeout(commitTimer); 
-                    commitTimer = null; 
-                } 
-            };
-            
-            const scheduleCommit = () => {
-                clearCommit();
-                commitTimer = setTimeout(() => {
-                    if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
-                        try {
-                            elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-                            commitSent += 1;
-                            if (autoResponseCreate) {
-                                elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
-                            }
-                            if (commitSent <= 3 || commitSent % 10 === 0) {
-                                console.log(`[ElevenLabs] ✅ Commit sent (total: ${commitSent})`);
-                            }
-                        } catch (e) {
-                            console.error('[ElevenLabs] ❌ Commit error:', e.message || e);
-                        }
-                    }
-                }, idleCommitMs);
-            };
+            infobipWs.on('error', console.error);
 
-            // Set up ElevenLabs connection
-            (async () => {
+            const setupElevenLabs = async () => {
                 try {
                     const signedUrl = await this.getSignedUrl();
                     elevenLabsWs = new WebSocket(signedUrl);
@@ -62,15 +30,9 @@ class WebSocketProxy {
                     elevenLabsWs.on('open', () => {
                         console.log('[ElevenLabs] Connected to Conversational AI');
                         const initialConfig = {
-                            type: 'conversation_initiation_client_data',
-                            conversation_config_override: {
-                                agent: {
-                                    first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI assistant. How can I help you today?"
-                                }
-                            }
+                            type: 'conversation_initiation_client_data'
                         };
                         elevenLabsWs.send(JSON.stringify(initialConfig));
-                        console.log('[ElevenLabs] Sent conversation config with first_message');
                     });
 
                     elevenLabsWs.on('message', (data) => {
@@ -78,35 +40,38 @@ class WebSocketProxy {
                             const message = JSON.parse(data);
                             switch (message.type) {
                                 case 'conversation_initiation_metadata':
-                                    console.log('[ElevenLabs] ✅ Conversation initialized');
-                                    console.log('[ElevenLabs] Waiting for agent first message (must be configured in agent settings)');
+                                    console.log('[ElevenLabs] Received initiation metadata');
                                     break;
-                                case 'audio': {
+                                case 'audio':
                                     const buff = Buffer.from(message.audio_event.audio_base_64, 'base64');
                                     if (infobipWs.readyState === WebSocket.OPEN) {
                                         infobipWs.send(buff);
                                     }
                                     break;
-                                }
                                 case 'agent_response_correction':
                                 case 'interruption':
                                     if (infobipWs.readyState === WebSocket.OPEN) {
-                                        infobipWs.send(JSON.stringify({ action: 'clear' }));
+                                        infobipWs.send(JSON.stringify({
+                                            action: 'clear'
+                                        }));
                                     }
                                     break;
                                 case 'ping':
                                     if (message.ping_event?.event_id) {
-                                        elevenLabsWs.send(JSON.stringify({ type: 'pong', event_id: message.ping_event.event_id }));
+                                        elevenLabsWs.send(JSON.stringify({
+                                            type: 'pong',
+                                            event_id: message.ping_event.event_id
+                                        }));
                                     }
                                     break;
-                                case 'user_transcript':
-                                    console.log(`[ElevenLabs] 🎤 User: "${message.user_transcription_event?.user_transcript || ''}"`);
-                                    break;
                                 case 'agent_response':
-                                    console.log(`[ElevenLabs] 🤖 Agent: "${message.agent_response_event?.agent_response || ''}"`);
+                                    console.log(`[ElevenLabs] Agent response: ${message.agent_response_event?.agent_response}`);
+                                    break;
+                                case 'user_transcript':
+                                    console.log(`[ElevenLabs] User transcript: ${message.user_transcription_event?.user_transcript}`);
                                     break;
                                 default:
-                                    break;
+                                    console.log(`[ElevenLabs] Unhandled message type: ${message.type}`);
                             }
                         } catch (error) {
                             console.error('[ElevenLabs] Error processing message:', error);
@@ -114,43 +79,28 @@ class WebSocketProxy {
                     });
 
                     elevenLabsWs.on('error', (error) => console.error('[ElevenLabs] WebSocket error:', error));
-                    elevenLabsWs.on('close', () => { 
-                        clearCommit();
-                        console.log('[ElevenLabs] Disconnected');
-                    });
+                    elevenLabsWs.on('close', () => console.log('[ElevenLabs] Disconnected'));
                 } catch (error) {
                     console.error('[ElevenLabs] Setup error:', error);
                 }
-            })();
+            };
+
+            // Set up ElevenLabs connection
+            setupElevenLabs();
 
             // Handle messages from Infobip
             infobipWs.on('message', (message) => {
                 try {
                     if (typeof message === 'string') {
-                        // Control JSON from Infobip
-                        console.log('[Infobip] JSON control:', message);
-                        return; // JSON control events ignored
-                    }
-
-                    // Binary PCM from Infobip
-                    recvPackets += 1;
-                    if (recvPackets <= 3 || recvPackets % 100 === 0) {
-                        console.log(`[Infobip] 🔊 Binary audio packet #${recvPackets} (${message.length} bytes)`);
+                        // JSON event, we ignore those for now
+                        return;
                     }
 
                     if (elevenLabsWs?.readyState === WebSocket.OPEN) {
-                        const b64 = Buffer.from(message).toString('base64');
-                        elevenLabsWs.send(JSON.stringify({
-                            type: 'input_audio_buffer.append',
-                            audio: b64
-                        }));
-                        appendSent += 1;
-                        if (appendSent <= 3 || appendSent % 100 === 0) {
-                            console.log(`[Infobip → ElevenLabs] 📤 append sent #${appendSent}`);
-                        }
-                        scheduleCommit();
-                    } else {
-                        console.warn('[Infobip → ElevenLabs] WS not open, dropping packet');
+                        const audioMessage = {
+                            user_audio_chunk: Buffer.from(message).toString('base64')
+                        };
+                        elevenLabsWs.send(JSON.stringify(audioMessage));
                     }
                 } catch (error) {
                     console.error('[Infobip] Error processing message:', error);
@@ -159,8 +109,7 @@ class WebSocketProxy {
 
             // Handle WebSocket closure
             infobipWs.on('close', () => {
-                clearCommit();
-                console.log(`[Infobip] Client disconnected — recvPackets=${recvPackets}, appends=${appendSent}, commits=${commitSent}`);
+                console.log('[Infobip] Client disconnected');
                 if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                     elevenLabsWs.close();
                 }
@@ -171,7 +120,6 @@ class WebSocketProxy {
             console.error('❌ WebSocket Server error:', error);
         });
     }
-
 
     async getSignedUrl() {
         try {

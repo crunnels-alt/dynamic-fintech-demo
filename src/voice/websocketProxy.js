@@ -60,23 +60,11 @@ class WebSocketProxy {
                             conversation_config_override: {
                                 agent: {
                                     first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI assistant. How can I help you today?"
-                                },
-                                audio: {
-                                    input: {
-                                        encoding: 'pcm_16000',
-                                        sample_rate: 16000,
-                                        channels: 1
-                                    },
-                                    output: {
-                                        encoding: 'pcm_16000',
-                                        sample_rate: 16000,
-                                        channels: 1
-                                    }
                                 }
                             }
                         };
                         elevenLabsWs.send(JSON.stringify(initialConfig));
-                        console.log('[ElevenLabs] Sent conversation config with first_message and PCM16k I/O');
+                        console.log('[ElevenLabs] Sent conversation config with first_message');
                     });
 
                     elevenLabsWs.on('message', (data) => {
@@ -85,13 +73,7 @@ class WebSocketProxy {
                             switch (message.type) {
                                 case 'conversation_initiation_metadata':
                                     console.log('[ElevenLabs] ✅ Conversation initialized');
-                                    // Request the agent to speak immediately
-                                    try {
-                                        elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
-                                        console.log('[ElevenLabs] ▶️ Sent response.create to trigger first message');
-                                    } catch (e) {
-                                        console.error('[ElevenLabs] ❌ Failed to request initial response:', e.message || e);
-                                    }
+                                    console.log('[ElevenLabs] Waiting for agent first message (must be configured in agent settings)');
                                     break;
                                 case 'audio': {
                                     const buff = Buffer.from(message.audio_event.audio_base_64, 'base64');

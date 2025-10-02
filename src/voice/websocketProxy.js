@@ -65,6 +65,11 @@ class WebSocketProxy {
                             switch (message.type) {
                                 case 'conversation_initiation_metadata':
                                     console.log('[ElevenLabs] ✅ Conversation initialized');
+                                    // Request initial greeting from agent
+                                    elevenLabsWs.send(JSON.stringify({
+                                        type: 'initial_greeting_request'
+                                    }));
+                                    console.log('[ElevenLabs] 🎙️ Requested initial greeting');
                                     break;
                                 case 'audio': {
                                     const buff = Buffer.from(message.audio_event.audio_base_64, 'base64');

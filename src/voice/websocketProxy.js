@@ -44,8 +44,11 @@ class WebSocketProxy {
                                     break;
                                 case 'audio':
                                     const buff = Buffer.from(message.audio_event.audio_base_64, 'base64');
+                                    console.log(`[ElevenLabs → Infobip] Sending audio chunk (${buff.length} bytes)`);
                                     if (infobipWs.readyState === WebSocket.OPEN) {
                                         infobipWs.send(buff);
+                                    } else {
+                                        console.warn('[ElevenLabs → Infobip] Infobip WS not open, dropping audio');
                                     }
                                     break;
                                 case 'agent_response_correction':

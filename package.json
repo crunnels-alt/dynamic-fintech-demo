@@ -7,20 +7,8 @@
     "test": "tests"
   },
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
-    "start:proxy": "node proxy-server.js",
-    "dev:proxy": "nodemon proxy-server.js",
-    "start:all": "concurrently \"npm run start\" \"npm run start:proxy\"",
-    "dev:all": "concurrently \"npm run dev\" \"npm run dev:proxy\"",
-    "start:production": "npm run migrate:up || echo 'Migration failed, continuing with server start' && npm run start",
-    "migrate:up": "node scripts/migrate-database.js",
-    "validate-config": "node scripts/validate-config.js",
-    "setup-db": "node scripts/setupDatabase.js",
-    "test-phones": "node scripts/testPhoneNumbers.js",
-    "setup-ngrok": "./scripts/setup-ngrok.sh",
-    "test-offline": "node scripts/offline-test.js",
-    "test-postgres": "node scripts/test-postgres.js",
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
     "test": "jest"
   },
   "keywords": [

@@ -1,3 +1,4 @@
+require('dotenv').config();
 const http = require('http');
 const WebSocket = require('ws');
 const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
@@ -122,7 +123,7 @@ wss.on('connection', (infobipWs) => {
   });
 });
 
-const PORT = process.env.PORT || 3500;
+const PORT = process.env.WS_PROXY_PORT || process.env.PORT || 3500;
 server.listen(PORT, () => {
   console.log(`WS Server is running on port ${server.address().port}`);
 });

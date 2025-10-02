@@ -20,6 +20,9 @@ class WebSocketProxy {
             
             let elevenLabsWs = null;
             let commitTimer = null;
+            let recvPackets = 0;
+            let appendSent = 0;
+            let commitSent = 0;
             const idleCommitMs = Number(process.env.ELEVENLABS_IDLE_COMMIT_MS || 500);
             const autoResponseCreate = (process.env.ELEVENLABS_AUTO_RESPONSE_CREATE ?? 'true').toLowerCase() !== 'false';
 
@@ -36,10 +39,13 @@ class WebSocketProxy {
                     if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
                         try {
                             elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+                            commitSent += 1;
                             if (autoResponseCreate) {
                                 elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
                             }
-                            console.log('[ElevenLabs] ✅ Committed audio buffer');
+                            if (commitSent <= 3 || commitSent % 10 === 0) {
+                                console.log(`[ElevenLabs] ✅ Commit sent (total: ${commitSent})`);
+                            }
                         } catch (e) {
                             console.error('[ElevenLabs] ❌ Commit error:', e.message || e);
                         }
@@ -121,15 +127,30 @@ class WebSocketProxy {
             infobipWs.on('message', (message) => {
                 try {
                     if (typeof message === 'string') {
+                        // Control JSON from Infobip
+                        console.log('[Infobip] JSON control:', message);
                         return; // JSON control events ignored
                     }
 
+                    // Binary PCM from Infobip
+                    recvPackets += 1;
+                    if (recvPackets <= 3 || recvPackets % 100 === 0) {
+                        console.log(`[Infobip] 🔊 Binary audio packet #${recvPackets} (${message.length} bytes)`);
+                    }
+
                     if (elevenLabsWs?.readyState === WebSocket.OPEN) {
+                        const b64 = Buffer.from(message).toString('base64');
                         elevenLabsWs.send(JSON.stringify({
                             type: 'input_audio_buffer.append',
-                            audio: Buffer.from(message).toString('base64')
+                            audio: b64
                         }));
+                        appendSent += 1;
+                        if (appendSent <= 3 || appendSent % 100 === 0) {
+                            console.log(`[Infobip → ElevenLabs] 📤 append sent #${appendSent}`);
+                        }
                         scheduleCommit();
+                    } else {
+                        console.warn('[Infobip → ElevenLabs] WS not open, dropping packet');
                     }
                 } catch (error) {
                     console.error('[Infobip] Error processing message:', error);
@@ -139,7 +160,7 @@ class WebSocketProxy {
             // Handle WebSocket closure
             infobipWs.on('close', () => {
                 clearCommit();
-                console.log('[Infobip] Client disconnected');
+                console.log(`[Infobip] Client disconnected — recvPackets=${recvPackets}, appends=${appendSent}, commits=${commitSent}`);
                 if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                     elevenLabsWs.close();
                 }

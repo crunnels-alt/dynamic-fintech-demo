@@ -79,7 +79,9 @@ class WebSocketProxy {
                     });
 
                     elevenLabsWs.on('error', (error) => console.error('[ElevenLabs] WebSocket error:', error));
-                    elevenLabsWs.on('close', () => console.log('[ElevenLabs] Disconnected'));
+                    elevenLabsWs.on('close', (code, reason) => {
+                        console.log(`[ElevenLabs] Disconnected - Code: ${code}, Reason: ${reason || 'No reason provided'}`);
+                    });
                 } catch (error) {
                     console.error('[ElevenLabs] Setup error:', error);
                 }

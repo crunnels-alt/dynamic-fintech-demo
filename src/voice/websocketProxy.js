@@ -58,6 +58,13 @@ class WebSocketProxy {
             const maxCommitIntervalMs = Number(process.env.ELEVENLABS_MAX_COMMIT_INTERVAL_MS || 2000);
             const autoResponseCreate = (process.env.ELEVENLABS_AUTO_RESPONSE_CREATE ?? 'true').toLowerCase() !== 'false';
 
+            // Set up WebSocket keepalive for Infobip connection
+            const keepaliveInterval = setInterval(() => {
+                if (infobipWs.readyState === WebSocket.OPEN) {
+                    infobipWs.ping();
+                }
+            }, 30000); // Ping every 30 seconds
+
             const clearCommit = () => {
                 if (commitTimer) {
                     clearTimeout(commitTimer);
@@ -196,7 +203,15 @@ class WebSocketProxy {
                                     break;
                                 case 'ping':
                                     if (message.ping_event?.event_id) {
-                                        elevenLabsWs.send(JSON.stringify({ type: 'pong', event_id: message.ping_event.event_id }));
+                                        const pingMs = message.ping_event.ping_ms || 0;
+                                        setTimeout(() => {
+                                            if (elevenLabsWs.readyState === WebSocket.OPEN) {
+                                                elevenLabsWs.send(JSON.stringify({
+                                                    type: 'pong',
+                                                    event_id: message.ping_event.event_id
+                                                }));
+                                            }
+                                        }, pingMs);
                                     }
                                     break;
                                 case 'user_transcript':
@@ -283,6 +298,7 @@ class WebSocketProxy {
             // Handle WebSocket closure
             infobipWs.on('close', (code, reason) => {
                 clearCommit();
+                clearInterval(keepaliveInterval);
                 console.log(`[Infobip] Client disconnected (code: ${code})`);
                 if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                     elevenLabsWs.close();

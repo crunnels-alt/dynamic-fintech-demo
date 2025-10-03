@@ -189,3 +189,49 @@ git checkout checkpoint-pre-signed-url-pool
 ```
 
 This will restore the code to the state before signed URL pool implementation.
+
+## Latest Optimization: Audio Buffering (v3)
+
+**Date**: October 3, 2025  
+**Objective**: Fix race condition where Infobip sends audio before ElevenLabs is ready
+
+### Root Cause Identified
+
+From production logs, the signed URL pool worked but revealed a new issue:
+```
+[Infobip] Cannot send audio - ElevenLabs WS not open  ❌ (audio dropped)
+[ElevenLabs] WebSocket connected  ✅ (ready, but too late)
+[Infobip] Cannot send audio - ElevenLabs WS not open  ❌ (more audio dropped)
+```
+
+**Timeline**:
+1. Infobip connects to our WebSocket (instant)
+2. Infobip immediately starts sending audio
+3. We're still connecting to ElevenLabs (~150-200ms)
+4. Audio is dropped because ElevenLabs isn't ready
+5. Infobip times out after 2 seconds (no response)
+
+### Solution: Audio Buffering
+
+Implemented a queue to buffer incoming audio until ElevenLabs is ready:
+
+**Changes Made**:
+1. Added `elevenLabsReady` flag and `audioBuffer` array
+2. When Infobip sends audio and ElevenLabs isn't ready: buffer it
+3. When ElevenLabs connects: flush all buffered audio
+4. All subsequent audio flows normally
+
+**Code Location**: `src/voice/websocketProxy.js`
+- Lines 50-51: Buffer variables
+- Lines 152-168: Flush buffer when ElevenLabs is ready
+- Lines 261-268: Buffer audio if not ready
+
+**Expected Impact**:
+- No dropped audio during connection handshake
+- Infobip receives responses faster (prevents timeout)
+- Call should last beyond 2 seconds
+
+**Rollback Instructions**:
+```bash
+git checkout checkpoint-pre-audio-buffering
+```

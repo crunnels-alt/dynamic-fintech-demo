@@ -47,6 +47,8 @@ class WebSocketProxy {
             }
 
             let elevenLabsWs = null;
+            let elevenLabsReady = false; // Track when ElevenLabs is ready to receive audio
+            let audioBuffer = []; // Buffer audio until ElevenLabs is connected
             let commitTimer = null;
             let audioChunksReceived = 0;
             let audioChunksSinceLastCommit = 0;
@@ -146,6 +148,24 @@ class WebSocketProxy {
                                 elevenLabsWs.close(1011, 'Configuration send failure');
                             }
                         }
+
+                        // Mark ElevenLabs as ready and flush buffered audio
+                        elevenLabsReady = true;
+
+                        if (audioBuffer.length > 0) {
+                            console.log(`[Bridge] Flushing ${audioBuffer.length} buffered audio chunk(s) to ElevenLabs`);
+                            audioBuffer.forEach(audioChunk => {
+                                try {
+                                    elevenLabsWs.send(JSON.stringify({
+                                        user_audio_chunk: Buffer.from(audioChunk).toString('base64')
+                                    }));
+                                } catch (err) {
+                                    console.error('[Bridge] Error flushing buffered audio:', err.message);
+                                }
+                            });
+                            audioBuffer = []; // Clear buffer after flushing
+                            console.log('[Bridge] Audio buffer flushed successfully');
+                        }
                     });
 
                     elevenLabsWs.on('message', (data) => {
@@ -238,6 +258,16 @@ class WebSocketProxy {
                     audioChunksSinceLastCommit++;
                     lastAudioTime = Date.now();
 
+                    // Buffer audio if ElevenLabs isn't ready yet
+                    if (!elevenLabsReady) {
+                        audioBuffer.push(message);
+                        if (audioBuffer.length === 1) {
+                            console.log('[Bridge] Buffering audio - ElevenLabs not ready yet');
+                        }
+                        return;
+                    }
+
+                    // Send audio to ElevenLabs
                     if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                         elevenLabsWs.send(JSON.stringify({
                             user_audio_chunk: Buffer.from(message).toString('base64')

@@ -25,6 +25,7 @@ class WebSocketProxy {
             let audioChunksSent = 0;
             let lastAudioTime = null;
             let keepaliveInterval = null;
+            let keepaliveCount = 0;
 
             // Create silence frame for keepalive (20ms of silence at 16kHz PCM)
             // 16000 Hz * 0.02 seconds * 2 bytes per sample (16-bit) = 640 bytes
@@ -54,6 +55,10 @@ class WebSocketProxy {
                                 const timeSinceLastAudio = lastAudioTime ? (Date.now() - lastAudioTime) : Infinity;
                                 if (timeSinceLastAudio > 100) {
                                     infobipWs.send(silenceFrame);
+                                    keepaliveCount++;
+                                    if (keepaliveCount % 50 === 0) { // Log every 1 second (50 * 20ms)
+                                        console.log(`[Bridge conn_${connId}] Keepalive: sent ${keepaliveCount} silence frames`);
+                                    }
                                 }
                             }
                         }, 20); // Send every 20ms
@@ -65,7 +70,7 @@ class WebSocketProxy {
                             const message = JSON.parse(data);
                             switch (message.type) {
                                 case 'conversation_initiation_metadata':
-                                    console.log('[ElevenLabs] Received initiation metadata');
+                                    console.log(`[ElevenLabs conn_${connId}] Received initiation metadata:`, JSON.stringify(message.conversation_initiation_metadata_event, null, 2));
                                     break;
                                 case 'audio':
                                     const buff = Buffer.from(message.audio_event.audio_base_64, 'base64');
@@ -167,7 +172,7 @@ class WebSocketProxy {
                 // Clean up keepalive interval
                 if (keepaliveInterval) {
                     clearInterval(keepaliveInterval);
-                    console.log(`[Bridge conn_${connId}] Stopped audio keepalive`);
+                    console.log(`[Bridge conn_${connId}] Stopped audio keepalive (sent ${keepaliveCount || 0} silence frames total)`);
                 }
 
                 if (elevenLabsWs?.readyState === WebSocket.OPEN) {

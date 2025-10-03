@@ -90,14 +90,13 @@ class WebSocketProxy {
                                     model_id: "eleven_turbo_v2_5"
                                 },
                                 asr: {
-                                    quality: "high",
-                                    keywords: []
+                                    quality: "high"
                                 },
                                 vad: {
                                     enabled: true,
-                                    threshold: 0.5,
+                                    threshold: 0.3,
                                     prefix_padding_ms: 300,
-                                    silence_duration_ms: 500
+                                    silence_duration_ms: 700
                                 }
                             }
                         };
@@ -136,7 +135,11 @@ class WebSocketProxy {
                                 case 'agent_response':
                                     console.log(`[ElevenLabs] 🤖 Agent: "${message.agent_response_event?.agent_response || ''}"`);
                                     break;
+                                case 'error':
+                                    console.error(`[ElevenLabs] ❌ Error event:`, JSON.stringify(message));
+                                    break;
                                 default:
+                                    console.log(`[ElevenLabs] Unknown message type: ${message.type}`);
                                     break;
                             }
                         } catch (error) {
@@ -166,8 +169,14 @@ class WebSocketProxy {
                     audioChunksSinceLastCommit++;
                     lastAudioTime = Date.now();
 
+                    // Log first chunk details for debugging
+                    if (audioChunksReceived === 1) {
+                        console.log(`[Infobip] First audio chunk: ${message.length} bytes, type: ${typeof message}`);
+                        console.log(`[Infobip] First 20 bytes (hex):`, Buffer.from(message).slice(0, 20).toString('hex'));
+                    }
+
                     if (audioChunksReceived % 50 === 0) {
-                        console.log(`[Infobip → ElevenLabs] Sent ${audioChunksReceived} audio chunks`);
+                        console.log(`[Infobip → ElevenLabs] Sent ${audioChunksReceived} audio chunks (${message.length} bytes each)`);
                     }
 
                     if (elevenLabsWs?.readyState === WebSocket.OPEN) {

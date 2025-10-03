@@ -61,8 +61,9 @@ class WebSocketProxy {
             // Keepalive configuration
             const continuousKeepalive = (process.env.ELEVENLABS_CONTINUOUS_KEEPALIVE ?? 'true').toLowerCase() === 'true';
             const keepaliveIntervalMs = Number(process.env.ELEVENLABS_TTS_KEEPALIVE_INTERVAL_MS || 20);
-            let lastTtsTime = 0;
+            let lastTtsTime = 0; // Start at 0 - will be updated when TTS audio arrives
             let keepaliveTimer = null;
+            let silenceFrameCount = 0;
 
             // Generate PCM silence frame (16-bit PCM, 16kHz, mono, 20ms = 640 bytes)
             const generateSilenceFrame = () => {
@@ -74,14 +75,22 @@ class WebSocketProxy {
                 if (!continuousKeepalive) return;
 
                 keepaliveTimer = setInterval(() => {
-                    const now = Date.now();
-                    const timeSinceLastTts = now - lastTtsTime;
+                    if (infobipWs.readyState !== WebSocket.OPEN) return;
 
-                    // Only send silence if >100ms since last TTS (avoid interfering with active audio)
-                    if (timeSinceLastTts > 100 && infobipWs.readyState === WebSocket.OPEN) {
+                    const now = Date.now();
+                    const timeSinceLastTts = lastTtsTime === 0 ? Infinity : (now - lastTtsTime);
+
+                    // Send silence if: never had TTS OR >100ms since last TTS
+                    if (timeSinceLastTts > 100) {
                         try {
                             const silenceFrame = generateSilenceFrame();
                             infobipWs.send(silenceFrame);
+                            silenceFrameCount++;
+
+                            // Log every 50 frames (~1 second) to avoid spam
+                            if (silenceFrameCount % 50 === 0) {
+                                console.log(`[Keepalive] Sent ${silenceFrameCount} silence frames`);
+                            }
                         } catch (err) {
                             console.error('[Keepalive] Error sending silence frame:', err.message);
                         }

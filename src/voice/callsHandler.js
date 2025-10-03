@@ -202,7 +202,7 @@ class CallsHandler {
             });
 
             // Store context in active calls map so WebSocket can retrieve it
-            const callSession = this.activeCalls.get(callId);
+            let callSession = this.activeCalls.get(callId);
             if (callSession) {
                 callSession.userContext = userContext;
                 console.log(`💾 Stored user context for call ${callId}`);
@@ -227,7 +227,7 @@ class CallsHandler {
             console.log(`✅ Created dialog with ID ${dialogData.id}`);
 
             // Update call session with dialog info
-            const callSession = this.activeCalls.get(callId);
+            callSession = this.activeCalls.get(callId);
             if (callSession) {
                 callSession.dialogId = dialogData.id;
                 callSession.status = 'dialog_created';

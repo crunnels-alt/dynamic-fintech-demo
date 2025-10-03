@@ -112,11 +112,23 @@ class WebSocketProxy {
             // Set up ElevenLabs connection
             (async () => {
                 try {
+                    console.log('[ElevenLabs] 🔄 Requesting signed URL...');
+                    const signedUrlStartTime = Date.now();
+
                     const signedUrl = await this.getSignedUrl();
+
+                    const signedUrlDuration = Date.now() - signedUrlStartTime;
+                    console.log(`[ElevenLabs] ✅ Got signed URL in ${signedUrlDuration}ms`);
+                    console.log(`[ElevenLabs] 🔗 URL preview: ${signedUrl.substring(0, 80)}...`);
+
+                    console.log('[ElevenLabs] 🔌 Attempting WebSocket connection...');
+                    const wsConnectStartTime = Date.now();
                     elevenLabsWs = new WebSocket(signedUrl);
 
                     elevenLabsWs.on('open', () => {
-                        console.log('[ElevenLabs] Connected to Conversational AI');
+                        const wsConnectDuration = Date.now() - wsConnectStartTime;
+                        console.log(`[ElevenLabs] ✅ WebSocket connected in ${wsConnectDuration}ms`);
+                        console.log('[ElevenLabs] 📡 Connection state: OPEN (readyState: 1)');
 
                         // Build dynamic variables from customer context
                         const dynamicVariables = {};
@@ -280,21 +292,32 @@ class WebSocketProxy {
 
                         // Send configuration to ElevenLabs with error handling
                         try {
-                            console.log('[ElevenLabs] 📤 Sending configuration with', Object.keys(dynamicVariables).length, 'dynamic variables');
-                            console.log('[ElevenLabs] 📋 Config preview:', JSON.stringify({
-                                type: initialConfig.type,
-                                has_dynamic_variables: !!initialConfig.dynamic_variables,
-                                variable_count: Object.keys(initialConfig.dynamic_variables || {}).length,
-                                has_prompt_override: !!initialConfig.conversation_config_override?.agent?.prompt
-                            }));
+                            console.log('[ElevenLabs] 📤 Preparing to send configuration...');
+                            console.log('[ElevenLabs] 📊 Config stats:', {
+                                variable_count: Object.keys(dynamicVariables).length,
+                                has_prompt: !!initialConfig.conversation_config_override?.agent?.prompt,
+                                has_first_message: !!initialConfig.conversation_config_override?.agent?.first_message,
+                                prompt_length: initialConfig.conversation_config_override?.agent?.prompt?.prompt?.length || 0
+                            });
 
-                            elevenLabsWs.send(JSON.stringify(initialConfig));
+                            // Validate config is valid JSON before sending
+                            const configJson = JSON.stringify(initialConfig);
+                            console.log(`[ElevenLabs] 📏 Config size: ${configJson.length} characters`);
+
+                            if (configJson.length > 50000) {
+                                console.warn('[ElevenLabs] ⚠️  Large config size, might cause issues');
+                            }
+
+                            console.log('[ElevenLabs] 📡 Sending config to ElevenLabs...');
+                            elevenLabsWs.send(configJson);
                             console.log('[ElevenLabs] ✅ Configuration sent successfully');
                         } catch (configSendError) {
-                            console.error('[ElevenLabs] ❌ CRITICAL: Failed to send configuration:', configSendError.message);
-                            console.error('[ElevenLabs] Stack trace:', configSendError.stack);
+                            console.error('[ElevenLabs] ❌ CRITICAL: Failed to send configuration');
+                            console.error('[ElevenLabs] 💥 Error:', configSendError.message);
+                            console.error('[ElevenLabs] 📋 Stack:', configSendError.stack);
                             // Close connection if config fails to send
                             if (elevenLabsWs?.readyState === WebSocket.OPEN) {
+                                console.log('[ElevenLabs] 🔌 Closing connection due to config error');
                                 elevenLabsWs.close(1011, 'Configuration send failure');
                             }
                         }
@@ -356,13 +379,61 @@ class WebSocketProxy {
                         }
                     });
 
-                    elevenLabsWs.on('error', (error) => console.error('[ElevenLabs] WebSocket error:', error));
+                    elevenLabsWs.on('error', (error) => {
+                        console.error('[ElevenLabs] ❌ WebSocket ERROR occurred');
+                        console.error('[ElevenLabs] 💥 Error message:', error.message || 'No message');
+                        console.error('[ElevenLabs] 📊 Error details:', {
+                            type: error.type,
+                            code: error.code,
+                            errno: error.errno,
+                            syscall: error.syscall,
+                            address: error.address,
+                            port: error.port
+                        });
+                    });
+
                     elevenLabsWs.on('close', (code, reason) => {
                         clearCommit();
-                        console.log(`[ElevenLabs] Disconnected - Code: ${code}, Reason: ${reason || 'No reason provided'}`);
+                        console.log('[ElevenLabs] 🔌 WebSocket CLOSED');
+                        console.log(`[ElevenLabs] 📊 Close code: ${code}`);
+                        console.log(`[ElevenLabs] 📋 Close reason: ${reason ? `"${reason}"` : 'No reason provided'}`);
+
+                        // Interpret close codes
+                        const closeCodeMeanings = {
+                            1000: '✅ Normal closure - connection completed successfully',
+                            1001: '⚠️  Going away - endpoint going down or browser navigated away',
+                            1002: '❌ Protocol error - endpoint received malformed frame',
+                            1003: '❌ Unsupported data - endpoint received data it cannot accept',
+                            1006: '❌ Abnormal closure - connection lost without close frame',
+                            1007: '❌ Invalid data - message with inconsistent data type',
+                            1008: '❌ Policy violation - endpoint received message that violates policy',
+                            1009: '❌ Message too big - data frame too large',
+                            1010: '❌ Extension required - client expected negotiation',
+                            1011: '❌ Server error - server terminating due to unexpected condition',
+                            1015: '❌ TLS handshake failure - failed to perform TLS handshake'
+                        };
+
+                        const meaning = closeCodeMeanings[code] || `⚠️  Unknown close code: ${code}`;
+                        console.log(`[ElevenLabs] 📖 Meaning: ${meaning}`);
+
+                        if (code !== 1000) {
+                            console.error('[ElevenLabs] ⚠️  Abnormal disconnection detected!');
+                        }
                     });
                 } catch (error) {
-                    console.error('[ElevenLabs] Setup error:', error);
+                    console.error('[ElevenLabs] ❌ CRITICAL: Setup failed');
+                    console.error('[ElevenLabs] 💥 Error type:', error.constructor.name);
+                    console.error('[ElevenLabs] 💥 Error message:', error.message);
+                    console.error('[ElevenLabs] 📋 Stack trace:', error.stack);
+
+                    // Check for specific error types
+                    if (error.message?.includes('getSignedUrl')) {
+                        console.error('[ElevenLabs] ⚠️  Failed to get signed URL from ElevenLabs API');
+                    } else if (error.message?.includes('WebSocket')) {
+                        console.error('[ElevenLabs] ⚠️  WebSocket connection failed');
+                    } else if (error.message?.includes('timeout')) {
+                        console.error('[ElevenLabs] ⚠️  Connection timeout');
+                    }
                 }
             })();
 
@@ -442,24 +513,39 @@ class WebSocketProxy {
 
     async getSignedUrl() {
         try {
-            const response = await fetch(
-                `https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${this.elevenLabsAgentId}`,
-                {
-                    method: 'GET',
-                    headers: {
-                        'xi-api-key': this.elevenLabsApiKey,
-                    },
-                }
-            );
+            console.log('[ElevenLabs API] 🔑 Requesting signed URL...');
+            console.log('[ElevenLabs API] 🆔 Agent ID:', this.elevenLabsAgentId);
+
+            const url = `https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${this.elevenLabsAgentId}`;
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'xi-api-key': this.elevenLabsApiKey,
+                },
+            });
+
+            console.log('[ElevenLabs API] 📡 Response status:', response.status, response.statusText);
 
             if (!response.ok) {
-                throw new Error(`Failed to get signed URL: ${response.status} ${response.statusText}`);
+                const errorText = await response.text();
+                console.error('[ElevenLabs API] ❌ API Error Response:', errorText);
+                throw new Error(`Failed to get signed URL: ${response.status} ${response.statusText} - ${errorText}`);
             }
 
             const data = await response.json();
+            console.log('[ElevenLabs API] ✅ Successfully received signed URL');
+            console.log('[ElevenLabs API] 📊 Response keys:', Object.keys(data));
+
+            if (!data.signed_url) {
+                console.error('[ElevenLabs API] ❌ Missing signed_url in response:', data);
+                throw new Error('Signed URL not found in API response');
+            }
+
             return data.signed_url;
         } catch (error) {
-            console.error('❌ Error getting ElevenLabs signed URL:', error.message);
+            console.error('[ElevenLabs API] ❌ Failed to get signed URL');
+            console.error('[ElevenLabs API] 💥 Error:', error.message);
+            console.error('[ElevenLabs API] 📋 Stack:', error.stack);
             throw error;
         }
     }

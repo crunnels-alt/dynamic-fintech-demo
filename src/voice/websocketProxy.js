@@ -24,12 +24,6 @@ class WebSocketProxy {
             let elevenLabsWs = null;
             let audioChunksSent = 0;
             let lastAudioTime = null;
-            let keepaliveInterval = null;
-            let keepaliveCount = 0;
-
-            // Create silence frame for keepalive (20ms of silence at 16kHz PCM)
-            // 16000 Hz * 0.02 seconds * 2 bytes per sample (16-bit) = 640 bytes
-            const silenceFrame = Buffer.alloc(640, 0);
 
             infobipWs.on('error', (error) => {
                 console.error(`[Infobip conn_${connId}] Error:`, error);
@@ -47,22 +41,6 @@ class WebSocketProxy {
                             type: 'conversation_initiation_client_data'
                         };
                         elevenLabsWs.send(JSON.stringify(initialConfig));
-
-                        // Start keepalive - send silence every 20ms to prevent Infobip timeout
-                        keepaliveInterval = setInterval(() => {
-                            if (infobipWs.readyState === WebSocket.OPEN) {
-                                // Only send keepalive if we haven't sent audio recently (within last 100ms)
-                                const timeSinceLastAudio = lastAudioTime ? (Date.now() - lastAudioTime) : Infinity;
-                                if (timeSinceLastAudio > 100) {
-                                    infobipWs.send(silenceFrame);
-                                    keepaliveCount++;
-                                    if (keepaliveCount % 50 === 0) { // Log every 1 second (50 * 20ms)
-                                        console.log(`[Bridge conn_${connId}] Keepalive: sent ${keepaliveCount} silence frames`);
-                                    }
-                                }
-                            }
-                        }, 20); // Send every 20ms
-                        console.log(`[Bridge conn_${connId}] Started audio keepalive (20ms silence frames)`);
                     });
 
                     elevenLabsWs.on('message', (data) => {
@@ -122,11 +100,6 @@ class WebSocketProxy {
                         const duration = Date.now() - startTime;
                         console.log(`[ElevenLabs conn_${connId}] Disconnected - Code: ${code}, Reason: ${reason || 'No reason provided'}`);
                         console.log(`[ElevenLabs conn_${connId}] Connection lasted ${duration}ms, sent ${audioChunksSent} audio chunks`);
-
-                        // Clean up keepalive interval
-                        if (keepaliveInterval) {
-                            clearInterval(keepaliveInterval);
-                        }
                     });
                 } catch (error) {
                     console.error('[ElevenLabs] Setup error:', error);
@@ -167,12 +140,6 @@ class WebSocketProxy {
                 }
                 if (duration < 5000) {
                     console.error(`[Infobip conn_${connId}] ⚠️  PREMATURE DISCONNECT - Call ended after only ${duration}ms!`);
-                }
-
-                // Clean up keepalive interval
-                if (keepaliveInterval) {
-                    clearInterval(keepaliveInterval);
-                    console.log(`[Bridge conn_${connId}] Stopped audio keepalive (sent ${keepaliveCount || 0} silence frames total)`);
                 }
 
                 if (elevenLabsWs?.readyState === WebSocket.OPEN) {

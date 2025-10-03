@@ -136,96 +136,39 @@ class WebSocketProxy {
 
                         if (customerContext) {
                             try {
-                            // Basic customer information (matching ElevenLabs agent config)
+                            // ONLY send the 8 variables defined in the ElevenLabs agent
+                            // Sending extra variables causes ElevenLabs to reject the conversation!
+
+                            // 1. customer_name
                             dynamicVariables.customer_name = customerContext.name || 'Valued Customer';
-                            dynamicVariables.company_name = customerContext.companyName || '';
+
+                            // 2. company_name
+                            dynamicVariables.company_name = customerContext.companyName || 'Your Company';
+
+                            // 3. current_balance
+                            dynamicVariables.current_balance = customerContext.fakeAccountBalance || '0.00';
+
+                            // 4. account_number
+                            dynamicVariables.account_number = customerContext.fakeAccountNumber || 'ACC000000000';
+
+                            // 5. loan_status
+                            dynamicVariables.loan_status = customerContext.loanApplicationStatus || 'No Active Applications';
+
+                            // 6. phone_number
                             dynamicVariables.phone_number = customerContext.phoneNumber || '';
 
-                            // Account information (matching ElevenLabs agent config)
-                            dynamicVariables.account_number = customerContext.fakeAccountNumber || '';
-                            dynamicVariables.current_balance = customerContext.fakeAccountBalance || '0';
-
-                            // Also send account_balance for backward compatibility
-                            dynamicVariables.account_balance = customerContext.fakeAccountBalance || '0';
-
-                            // Call history
-                            dynamicVariables.call_count = customerContext.callCount || 0;
-                            dynamicVariables.last_call_date = customerContext.lastCallDate || 'First call';
-                            dynamicVariables.is_returning_customer = (customerContext.callCount || 0) > 0 ? 'yes' : 'no';
-
-                            // Loan application information
-                            try {
-                                dynamicVariables.loan_status = customerContext.loanApplicationStatus || 'None';
-                                if (customerContext.loanApplications && customerContext.loanApplications.length > 0) {
-                                    const loan = customerContext.loanApplications[0];
-                                    dynamicVariables.loan_type = loan.loan_type || loan.loanType || '';
-                                    dynamicVariables.loan_amount = loan.loan_amount || loan.loanAmount || '0';
-                                    dynamicVariables.loan_next_step = loan.next_step || loan.nextStep || '';
-                                    dynamicVariables.loan_officer = loan.assigned_officer || loan.assignedOfficer || 'Michael Chen';
-                                } else {
-                                    dynamicVariables.loan_type = 'None';
-                                    dynamicVariables.loan_amount = '0';
-                                    dynamicVariables.loan_next_step = 'No active loan application';
-                                    dynamicVariables.loan_officer = '';
-                                }
-                            } catch (loanError) {
-                                variableErrors.push({ section: 'loan_data', error: loanError.message });
-                                console.error('[ElevenLabs] ❌ Error processing loan data:', loanError.message);
-                                // Set safe defaults
-                                dynamicVariables.loan_status = 'None';
-                                dynamicVariables.loan_type = 'None';
-                                dynamicVariables.loan_amount = '0';
-                                dynamicVariables.loan_next_step = 'Error loading loan data';
-                                dynamicVariables.loan_officer = '';
-                            }
-
-                            // Transaction history (last 3 transactions)
-                            try {
-                                if (customerContext.recentTransactions && customerContext.recentTransactions.length > 0) {
-                                    const transactions = customerContext.recentTransactions.slice(0, 3);
-                                    dynamicVariables.recent_transaction_count = transactions.length.toString();
-                                    dynamicVariables.last_transaction_merchant = transactions[0].merchant || 'Unknown';
-                                    dynamicVariables.last_transaction_amount = Math.abs(transactions[0].amount || 0).toString();
-                                    dynamicVariables.last_transaction_type = transactions[0].transaction_type || transactions[0].transactionType || 'debit';
-                                } else {
-                                    dynamicVariables.recent_transaction_count = '0';
-                                    dynamicVariables.last_transaction_merchant = 'None';
-                                    dynamicVariables.last_transaction_amount = '0';
-                                    dynamicVariables.last_transaction_type = '';
-                                }
-                            } catch (txError) {
-                                variableErrors.push({ section: 'transaction_data', error: txError.message });
-                                console.error('[ElevenLabs] ❌ Error processing transaction data:', txError.message);
-                                // Set safe defaults
-                                dynamicVariables.recent_transaction_count = '0';
-                                dynamicVariables.last_transaction_merchant = 'Error';
-                                dynamicVariables.last_transaction_amount = '0';
-                                dynamicVariables.last_transaction_type = '';
-                            }
-
-                            // Security and fraud information (matching ElevenLabs agent config)
+                            // 7. is_fraud_flagged
                             dynamicVariables.is_fraud_flagged = customerContext.fraudScenario ? true : false;
-                            dynamicVariables.verification_complete = true; // Always true for registered users calling in
 
-                            // Also send our own format for backward compatibility
-                            dynamicVariables.fraud_alert = customerContext.fraudScenario ? 'yes' : 'no';
-                            dynamicVariables.security_level = customerContext.fraudScenario ? 'high' : 'normal';
+                            // 8. verification_complete
+                            dynamicVariables.verification_complete = true; // Always true for registered users
 
-                            // Report errors if any occurred
-                            if (variableErrors.length > 0) {
-                                console.error('[ElevenLabs] ⚠️  Encountered', variableErrors.length, 'error(s) while building variables:');
-                                variableErrors.forEach(err => console.error('  -', err.section + ':', err.error));
-                            }
-
-                            console.log('[ElevenLabs] ✅ Dynamic variables constructed successfully');
-                            console.log('[ElevenLabs] 📋 Variable count:', Object.keys(dynamicVariables).length);
+                            console.log('[ElevenLabs] ✅ Dynamic variables constructed (8 variables matching agent config)');
                             console.log('[ElevenLabs] 👤 Customer:', dynamicVariables.customer_name, 'from', dynamicVariables.company_name);
                             console.log('[ElevenLabs] 💰 Account:', dynamicVariables.account_number, '($' + dynamicVariables.current_balance + ')');
-                            console.log('[ElevenLabs] 📞 Call history:', dynamicVariables.call_count, 'calls, last:', dynamicVariables.last_call_date);
-                            console.log('[ElevenLabs] 🏦 Loan:', dynamicVariables.loan_status, '-', dynamicVariables.loan_type);
-                            console.log('[ElevenLabs] 💳 Transactions:', dynamicVariables.recent_transaction_count, 'recent');
-                            console.log('[ElevenLabs] 🔒 Fraud flagged:', dynamicVariables.is_fraud_flagged, '- Verified:', dynamicVariables.verification_complete);
-                            console.log('[ElevenLabs] 📦 Full dynamic variables:', JSON.stringify(dynamicVariables, null, 2));
+                            console.log('[ElevenLabs] 🏦 Loan status:', dynamicVariables.loan_status);
+                            console.log('[ElevenLabs] 🔒 Fraud:', dynamicVariables.is_fraud_flagged, '| Verified:', dynamicVariables.verification_complete);
+                            console.log('[ElevenLabs] 📦 All variables:', JSON.stringify(dynamicVariables, null, 2));
 
                             } catch (variableConstructionError) {
                                 console.error('[ElevenLabs] ❌ CRITICAL: Failed to construct dynamic variables:', variableConstructionError.message);

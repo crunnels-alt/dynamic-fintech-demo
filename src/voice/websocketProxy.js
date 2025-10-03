@@ -55,7 +55,15 @@ class WebSocketProxy {
 
                     elevenLabsWs.on('open', () => {
                         console.log('[ElevenLabs] Connected to Conversational AI');
-                        const initialConfig = { type: 'conversation_initiation_client_data' };
+                        const initialConfig = {
+                            type: 'conversation_initiation_client_data',
+                            conversation_config_override: {
+                                agent: {
+                                    first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. How can I help you today?"
+                                }
+                            }
+                        };
+                        console.log('[ElevenLabs] Sending config:', JSON.stringify(initialConfig));
                         elevenLabsWs.send(JSON.stringify(initialConfig));
                     });
 
@@ -99,9 +107,9 @@ class WebSocketProxy {
                     });
 
                     elevenLabsWs.on('error', (error) => console.error('[ElevenLabs] WebSocket error:', error));
-                    elevenLabsWs.on('close', () => {
+                    elevenLabsWs.on('close', (code, reason) => {
                         clearCommit();
-                        console.log('[ElevenLabs] Disconnected');
+                        console.log(`[ElevenLabs] Disconnected - Code: ${code}, Reason: ${reason || 'No reason provided'}`);
                     });
                 } catch (error) {
                     console.error('[ElevenLabs] Setup error:', error);
@@ -128,9 +136,9 @@ class WebSocketProxy {
             });
 
             // Handle WebSocket closure
-            infobipWs.on('close', () => {
+            infobipWs.on('close', (code, reason) => {
                 clearCommit();
-                console.log('[Infobip] Client disconnected');
+                console.log(`[Infobip] Client disconnected - Code: ${code}, Reason: ${reason || 'No reason provided'}`);
                 if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                     elevenLabsWs.close();
                 }

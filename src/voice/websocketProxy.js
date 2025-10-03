@@ -15,33 +15,48 @@ class WebSocketProxy {
     }
 
     setupWebSocketServer() {
-        this.wss.on('connection', (infobipWs, req) => {
-            const connId = Math.random().toString(36).substr(2, 6);
-            const startTime = Date.now();
-            console.log(`[Bridge] New Infobip connection conn_${connId}`);
-            console.log(`[Bridge] Connection from: ${req.socket.remoteAddress}`);
+        this.wss.on('connection', (infobipWs) => {
+            console.log('[Bridge] New Infobip connection');
 
             let elevenLabsWs = null;
-            let audioChunksSent = 0;
-            let lastAudioTime = null;
+            let commitTimer = null;
+            const idleCommitMs = Number(process.env.ELEVENLABS_IDLE_COMMIT_MS || 500);
+            const autoResponseCreate = (process.env.ELEVENLABS_AUTO_RESPONSE_CREATE ?? 'true').toLowerCase() !== 'false';
 
-            infobipWs.on('error', (error) => {
-                console.error(`[Infobip conn_${connId}] Error:`, error);
-            });
+            const clearCommit = () => {
+                if (commitTimer) {
+                    clearTimeout(commitTimer);
+                    commitTimer = null;
+                }
+            };
 
-            const setupElevenLabs = async () => {
+            const scheduleCommit = () => {
+                clearCommit();
+                commitTimer = setTimeout(() => {
+                    if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
+                        try {
+                            elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+                            if (autoResponseCreate) {
+                                elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
+                            }
+                            console.log('[ElevenLabs] ✅ Committed audio buffer');
+                        } catch (e) {
+                            console.error('[ElevenLabs] ❌ Commit error:', e.message || e);
+                        }
+                    }
+                }, idleCommitMs);
+            };
+
+            // Set up ElevenLabs connection
+            (async () => {
                 try {
                     const signedUrl = await this.getSignedUrl();
                     elevenLabsWs = new WebSocket(signedUrl);
 
                     elevenLabsWs.on('open', () => {
-                        const elapsed = Date.now() - startTime;
-                        console.log(`[ElevenLabs conn_${connId}] Connected to Conversational AI (${elapsed}ms after Infobip connected)`);
-                        const initialConfig = {
-                            type: 'conversation_initiation_client_data'
-                        };
+                        console.log('[ElevenLabs] Connected to Conversational AI');
+                        const initialConfig = { type: 'conversation_initiation_client_data' };
                         elevenLabsWs.send(JSON.stringify(initialConfig));
-                        console.log(`[Bridge conn_${connId}] Sent conversation config override`);
                     });
 
                     elevenLabsWs.on('message', (data) => {
@@ -49,80 +64,63 @@ class WebSocketProxy {
                             const message = JSON.parse(data);
                             switch (message.type) {
                                 case 'conversation_initiation_metadata':
-                                    console.log(`[ElevenLabs conn_${connId}] Received initiation metadata:`, JSON.stringify(message.conversation_initiation_metadata_event, null, 2));
+                                    console.log('[ElevenLabs] ✅ Conversation initialized');
                                     break;
-                                case 'audio':
+                                case 'audio': {
                                     const buff = Buffer.from(message.audio_event.audio_base_64, 'base64');
-                                    audioChunksSent++;
-                                    lastAudioTime = Date.now();
-                                    const elapsed = Date.now() - startTime;
-                                    console.log(`[ElevenLabs → Infobip conn_${connId}] Sending audio chunk #${audioChunksSent} (${buff.length} bytes) at ${elapsed}ms`);
                                     if (infobipWs.readyState === WebSocket.OPEN) {
                                         infobipWs.send(buff);
-                                    } else {
-                                        console.warn(`[ElevenLabs → Infobip conn_${connId}] Cannot send audio - Infobip WS not open (state: ${infobipWs.readyState})`);
                                     }
                                     break;
+                                }
                                 case 'agent_response_correction':
                                 case 'interruption':
                                     if (infobipWs.readyState === WebSocket.OPEN) {
-                                        infobipWs.send(JSON.stringify({
-                                            action: 'clear'
-                                        }));
+                                        infobipWs.send(JSON.stringify({ action: 'clear' }));
                                     }
                                     break;
                                 case 'ping':
                                     if (message.ping_event?.event_id) {
-                                        elevenLabsWs.send(JSON.stringify({
-                                            type: 'pong',
-                                            event_id: message.ping_event.event_id
-                                        }));
+                                        elevenLabsWs.send(JSON.stringify({ type: 'pong', event_id: message.ping_event.event_id }));
                                     }
                                     break;
-                                case 'agent_response':
-                                    console.log(`[ElevenLabs] Agent response: ${message.agent_response_event?.agent_response}`);
-                                    break;
                                 case 'user_transcript':
-                                    console.log(`[ElevenLabs] User transcript: ${message.user_transcription_event?.user_transcript}`);
+                                    console.log(`[ElevenLabs] 🎤 User: "${message.user_transcription_event?.user_transcript || ''}"`);
+                                    break;
+                                case 'agent_response':
+                                    console.log(`[ElevenLabs] 🤖 Agent: "${message.agent_response_event?.agent_response || ''}"`);
                                     break;
                                 default:
-                                    console.log(`[ElevenLabs] Unhandled message type: ${message.type}`);
+                                    break;
                             }
                         } catch (error) {
                             console.error('[ElevenLabs] Error processing message:', error);
                         }
                     });
 
-                    elevenLabsWs.on('error', (error) => {
-                        console.error(`[ElevenLabs conn_${connId}] WebSocket error:`, error);
-                    });
-
-                    elevenLabsWs.on('close', (code, reason) => {
-                        const duration = Date.now() - startTime;
-                        console.log(`[ElevenLabs conn_${connId}] Disconnected - Code: ${code}, Reason: ${reason || 'No reason provided'}`);
-                        console.log(`[ElevenLabs conn_${connId}] Connection lasted ${duration}ms, sent ${audioChunksSent} audio chunks`);
+                    elevenLabsWs.on('error', (error) => console.error('[ElevenLabs] WebSocket error:', error));
+                    elevenLabsWs.on('close', () => {
+                        clearCommit();
+                        console.log('[ElevenLabs] Disconnected');
                     });
                 } catch (error) {
                     console.error('[ElevenLabs] Setup error:', error);
                 }
-            };
-
-            // Set up ElevenLabs connection
-            setupElevenLabs();
+            })();
 
             // Handle messages from Infobip
             infobipWs.on('message', (message) => {
                 try {
                     if (typeof message === 'string') {
-                        // JSON event, we ignore those for now
-                        return;
+                        return; // JSON control events ignored
                     }
 
                     if (elevenLabsWs?.readyState === WebSocket.OPEN) {
-                        const audioMessage = {
-                            user_audio_chunk: Buffer.from(message).toString('base64')
-                        };
-                        elevenLabsWs.send(JSON.stringify(audioMessage));
+                        elevenLabsWs.send(JSON.stringify({
+                            type: 'input_audio_buffer.append',
+                            audio: Buffer.from(message).toString('base64')
+                        }));
+                        scheduleCommit();
                     }
                 } catch (error) {
                     console.error('[Infobip] Error processing message:', error);
@@ -130,19 +128,9 @@ class WebSocketProxy {
             });
 
             // Handle WebSocket closure
-            infobipWs.on('close', (code, reason) => {
-                const duration = Date.now() - startTime;
-                console.log(`[Infobip conn_${connId}] Client disconnected - Code: ${code}, Reason: ${reason || 'No reason provided'}`);
-                console.log(`[Infobip conn_${connId}] Connection lasted ${duration}ms`);
-                console.log(`[Infobip conn_${connId}] Total audio chunks sent: ${audioChunksSent}`);
-                if (lastAudioTime) {
-                    const timeSinceLastAudio = Date.now() - lastAudioTime;
-                    console.log(`[Infobip conn_${connId}] Time since last audio: ${timeSinceLastAudio}ms`);
-                }
-                if (duration < 5000) {
-                    console.error(`[Infobip conn_${connId}] ⚠️  PREMATURE DISCONNECT - Call ended after only ${duration}ms!`);
-                }
-
+            infobipWs.on('close', () => {
+                clearCommit();
+                console.log('[Infobip] Client disconnected');
                 if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                     elevenLabsWs.close();
                 }
@@ -153,6 +141,7 @@ class WebSocketProxy {
             console.error('❌ WebSocket Server error:', error);
         });
     }
+
 
     async getSignedUrl() {
         try {

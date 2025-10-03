@@ -38,17 +38,7 @@ class WebSocketProxy {
                         const elapsed = Date.now() - startTime;
                         console.log(`[ElevenLabs conn_${connId}] Connected to Conversational AI (${elapsed}ms after Infobip connected)`);
                         const initialConfig = {
-                            type: 'conversation_initiation_client_data',
-                            conversation_config_override: {
-                                agent: {
-                                    prompt: {
-                                        prompt: `You are a professional voice assistant for Infobip Capital, an AI-powered banking service.
-Be helpful, professional, and secure in all interactions.
-If users ask about sensitive operations like fraud, offer to transfer them to a live agent.`,
-                                    },
-                                    language: "en"
-                                }
-                            }
+                            type: 'conversation_initiation_client_data'
                         };
                         elevenLabsWs.send(JSON.stringify(initialConfig));
                         console.log(`[Bridge conn_${connId}] Sent conversation config override`);

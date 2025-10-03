@@ -15,8 +15,28 @@ class WebSocketProxy {
     }
 
     setupWebSocketServer() {
-        this.wss.on('connection', (infobipWs) => {
+        this.wss.on('connection', (infobipWs, req) => {
             console.log('[Bridge] New Infobip connection');
+
+            // Extract customer context from query params or headers
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            const customerContextParam = url.searchParams.get('customerContext') ||
+                                        req.headers['x-customer-context'];
+            let customerContext = null;
+
+            console.log('[Bridge] Request headers:', JSON.stringify(req.headers));
+            console.log('[Bridge] Request URL:', req.url);
+
+            if (customerContextParam) {
+                try {
+                    customerContext = JSON.parse(decodeURIComponent(customerContextParam));
+                    console.log('[Bridge] ✅ Received customer context:', customerContext.name);
+                } catch (e) {
+                    console.error('[Bridge] ❌ Failed to parse customer context:', e);
+                }
+            } else {
+                console.log('[Bridge] ⚠️  No customer context provided');
+            }
 
             let elevenLabsWs = null;
             let commitTimer = null;
@@ -76,6 +96,21 @@ class WebSocketProxy {
 
                     elevenLabsWs.on('open', () => {
                         console.log('[ElevenLabs] Connected to Conversational AI');
+
+                        // Build dynamic variables from customer context
+                        const dynamicVariables = {};
+                        if (customerContext) {
+                            dynamicVariables.customer_name = customerContext.name || 'Valued Customer';
+                            dynamicVariables.company_name = customerContext.companyName || '';
+                            dynamicVariables.account_number = customerContext.fakeAccountNumber || '';
+                            dynamicVariables.account_balance = customerContext.fakeAccountBalance || '0';
+                            dynamicVariables.loan_status = customerContext.loanApplicationStatus || 'None';
+                            dynamicVariables.call_count = customerContext.callCount || 0;
+                            dynamicVariables.last_call_date = customerContext.lastCallDate || 'First call';
+
+                            console.log('[ElevenLabs] Using dynamic variables:', dynamicVariables);
+                        }
+
                         const initialConfig = {
                             type: 'conversation_initiation_client_data',
                             conversation_config_override: {
@@ -98,7 +133,8 @@ class WebSocketProxy {
                                     prefix_padding_ms: 300,
                                     silence_duration_ms: 700
                                 }
-                            }
+                            },
+                            dynamic_variables: dynamicVariables
                         };
                         console.log('[ElevenLabs] Sending config:', JSON.stringify(initialConfig));
                         elevenLabsWs.send(JSON.stringify(initialConfig));

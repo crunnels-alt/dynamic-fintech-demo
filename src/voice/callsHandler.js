@@ -166,20 +166,27 @@ class CallsHandler {
         try {
             console.log(`🔗 Creating dialog for call ${callId}...`);
 
+            // Encode customer context as query parameter for WebSocket
+            const customerContextParam = encodeURIComponent(JSON.stringify(userContext));
+
             const response = await this.ibClient.post(`${this.infobipBaseUrl}/calls/1/dialogs`, {
                 parentCallId: callId,
                 maxDuration: 3600, // Allow up to 1 hour (3600 seconds)
                 childCallRequest: {
                     endpoint: {
                         type: 'WEBSOCKET',
-                        websocketEndpointConfigId: this.mediaStreamConfigId
+                        websocketEndpointConfigId: this.mediaStreamConfigId,
+                        // Pass customer context as query parameter
+                        customData: {
+                            customerContext: customerContextParam
+                        }
                     }
                 }
             });
 
             const dialogData = response.data;
             console.log(`✅ Created dialog with ID ${dialogData.id}`);
-            
+
             // Update call session with dialog info
             const callSession = this.activeCalls.get(callId);
             if (callSession) {

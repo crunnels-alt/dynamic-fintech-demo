@@ -201,8 +201,12 @@ class CallsHandler {
                 fraudScenario: userContext.fraudScenario
             });
 
-            // Encode customer context as query parameter for WebSocket
-            const customerContextParam = encodeURIComponent(JSON.stringify(userContext));
+            // Store context in active calls map so WebSocket can retrieve it
+            const callSession = this.activeCalls.get(callId);
+            if (callSession) {
+                callSession.userContext = userContext;
+                console.log(`💾 Stored user context for call ${callId}`);
+            }
 
             const response = await this.ibClient.post(`${this.infobipBaseUrl}/calls/1/dialogs`, {
                 parentCallId: callId,
@@ -211,9 +215,9 @@ class CallsHandler {
                     endpoint: {
                         type: 'WEBSOCKET',
                         websocketEndpointConfigId: this.mediaStreamConfigId,
-                        // Pass customer context as query parameter
+                        // Store call ID in customData so we can look up context later
                         customData: {
-                            customerContext: customerContextParam
+                            parentCallId: callId
                         }
                     }
                 }

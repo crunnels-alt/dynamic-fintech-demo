@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const http = require('http');
 const fetch = require('node-fetch');
+const callsHandler = require('./callsHandler');
 
 class WebSocketProxy {
     constructor() {
@@ -18,40 +19,84 @@ class WebSocketProxy {
         this.wss.on('connection', (infobipWs, req) => {
             console.log('[Bridge] New Infobip connection');
 
-            // Extract customer context from query params or headers
-            const url = new URL(req.url, `http://${req.headers.host}`);
-            const customerContextParam = url.searchParams.get('customerContext') ||
-                                        req.headers['x-customer-context'];
+            // Extract customer context - try multiple methods
             let customerContext = null;
             let contextParseError = null;
 
             console.log('[Bridge] Request headers:', JSON.stringify(req.headers));
             console.log('[Bridge] Request URL:', req.url);
 
+            // Method 1: Try to extract from query params or headers (legacy)
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            const customerContextParam = url.searchParams.get('customerContext') ||
+                                        req.headers['x-customer-context'];
+
             if (customerContextParam) {
                 try {
                     customerContext = JSON.parse(decodeURIComponent(customerContextParam));
-                    console.log('[Bridge] ✅ Successfully parsed customer context');
-                    console.log('[Bridge] 👤 Customer name:', customerContext.name || 'MISSING');
-                    console.log('[Bridge] 🏢 Company:', customerContext.companyName || 'MISSING');
-                    console.log('[Bridge] 📊 Data check - loans:', customerContext.loanApplications?.length || 0, 'transactions:', customerContext.recentTransactions?.length || 0);
-
-                    // Validate critical fields
-                    const missingFields = [];
-                    if (!customerContext.name) missingFields.push('name');
-                    if (!customerContext.phoneNumber) missingFields.push('phoneNumber');
-                    if (!customerContext.fakeAccountNumber) missingFields.push('fakeAccountNumber');
-
-                    if (missingFields.length > 0) {
-                        console.warn('[Bridge] ⚠️  Missing critical fields:', missingFields.join(', '));
-                    }
+                    console.log('[Bridge] ✅ Successfully parsed customer context from URL/headers');
                 } catch (e) {
                     contextParseError = e;
                     console.error('[Bridge] ❌ Failed to parse customer context:', e.message);
-                    console.error('[Bridge] 📋 Raw context param (first 200 chars):', customerContextParam.substring(0, 200));
                 }
-            } else {
-                console.log('[Bridge] ⚠️  No customer context provided in request');
+            }
+
+            // Method 2: Listen for control messages that contain parent call ID, then look up context
+            let parentCallId = null;
+            const originalOn = infobipWs.on.bind(infobipWs);
+            infobipWs.on = function(event, handler) {
+                if (event === 'message') {
+                    return originalOn('message', (data) => {
+                        // Try to extract parentCallId from control messages
+                        if (!parentCallId && typeof data === 'string') {
+                            try {
+                                const msg = JSON.parse(data);
+                                if (msg['call-id']) {
+                                    console.log('[Bridge] 📞 Detected call-id in control message:', msg['call-id']);
+                                    // This is the child call ID, we need to find parent
+                                }
+                            } catch (e) {
+                                // Not JSON, ignore
+                            }
+                        }
+                        handler(data);
+                    });
+                }
+                return originalOn(event, handler);
+            };
+
+            // Method 3: Check all active calls and find matching one
+            if (!customerContext) {
+                console.log('[Bridge] 🔍 Attempting to find customer context from active calls...');
+                const activeCalls = callsHandler.getActiveCalls();
+                console.log('[Bridge] 📊 Active calls count:', activeCalls.length);
+
+                if (activeCalls.length > 0) {
+                    // Get the most recent call (likely the one being connected)
+                    const recentCall = activeCalls[activeCalls.length - 1];
+                    const callSession = callsHandler.getCallSession(recentCall.callId);
+                    if (callSession && callSession.userContext) {
+                        customerContext = callSession.userContext;
+                        console.log('[Bridge] ✅ Found customer context from active call:', recentCall.callId);
+                        console.log('[Bridge] 👤 Customer name:', customerContext.name || 'MISSING');
+                        console.log('[Bridge] 🏢 Company:', customerContext.companyName || 'MISSING');
+                        console.log('[Bridge] 📊 Data check - loans:', customerContext.loanApplications?.length || 0, 'transactions:', customerContext.recentTransactions?.length || 0);
+
+                        // Validate critical fields
+                        const missingFields = [];
+                        if (!customerContext.name) missingFields.push('name');
+                        if (!customerContext.phoneNumber) missingFields.push('phoneNumber');
+                        if (!customerContext.fakeAccountNumber) missingFields.push('fakeAccountNumber');
+
+                        if (missingFields.length > 0) {
+                            console.warn('[Bridge] ⚠️  Missing critical fields:', missingFields.join(', '));
+                        }
+                    }
+                }
+            }
+
+            if (!customerContext) {
+                console.log('[Bridge] ⚠️  No customer context found via any method');
             }
 
             let elevenLabsWs = null;

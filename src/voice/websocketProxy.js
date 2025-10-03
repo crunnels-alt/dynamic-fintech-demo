@@ -21,6 +21,7 @@ class WebSocketProxy {
 
     setupWebSocketServer() {
         this.wss.on('connection', (infobipWs, req) => {
+            const connectionStartTime = Date.now();
             console.log('[Bridge] New Infobip connection');
 
             // Extract customer context from active calls
@@ -155,11 +156,17 @@ class WebSocketProxy {
             (async () => {
                 try {
                     // Use signed URL pool instead of direct API call (saves ~150ms)
+                    const signedUrlStart = Date.now();
                     const signedUrl = await this.signedUrlPool.get();
+                    const signedUrlTime = Date.now() - signedUrlStart;
+                    console.log(`[Timing] Signed URL retrieved in ${signedUrlTime}ms`);
+
                     elevenLabsWs = new WebSocket(signedUrl);
 
                     elevenLabsWs.on('open', () => {
+                        const elevenLabsConnectTime = Date.now() - connectionStartTime;
                         console.log('[ElevenLabs] WebSocket connected');
+                        console.log(`[Timing] ElevenLabs connected in ${elevenLabsConnectTime}ms from Infobip connection`);
 
                         // Build dynamic variables from customer context
                         const dynamicVariables = {};
@@ -209,6 +216,8 @@ class WebSocketProxy {
                         elevenLabsReady = true;
 
                         // Start audio keepalive to prevent Infobip timeout
+                        const keepaliveStartTime = Date.now() - connectionStartTime;
+                        console.log(`[Timing] Keepalive starting at ${keepaliveStartTime}ms from Infobip connection`);
                         startAudioKeepalive();
 
                         if (audioBuffer.length > 0) {

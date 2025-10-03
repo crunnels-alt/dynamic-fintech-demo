@@ -191,6 +191,12 @@ class WebSocketProxy {
                         console.log(`[Infobip] First 20 bytes (hex):`, Buffer.from(message).slice(0, 20).toString('hex'));
                     }
 
+                    // Detect if we ever receive non-silence audio
+                    const hasNonZero = Buffer.from(message).some(byte => byte !== 0);
+                    if (hasNonZero && audioChunksReceived % 100 === 0) {
+                        console.log(`[Infobip] ✅ Received non-silence audio at chunk ${audioChunksReceived}`);
+                    }
+
                     if (audioChunksReceived % 50 === 0) {
                         console.log(`[Infobip → ElevenLabs] Sent ${audioChunksReceived} audio chunks (${message.length} bytes each)`);
                     }

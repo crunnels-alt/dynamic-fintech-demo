@@ -20,6 +20,8 @@ class WebSocketProxy {
 
             let elevenLabsWs = null;
             let commitTimer = null;
+            let audioChunksReceived = 0;
+            let lastAudioTime = Date.now();
             const idleCommitMs = Number(process.env.ELEVENLABS_IDLE_COMMIT_MS || 500);
             const autoResponseCreate = (process.env.ELEVENLABS_AUTO_RESPONSE_CREATE ?? 'true').toLowerCase() !== 'false';
 
@@ -35,11 +37,13 @@ class WebSocketProxy {
                 commitTimer = setTimeout(() => {
                     if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
                         try {
+                            const timeSinceLastAudio = Date.now() - lastAudioTime;
+                            console.log(`[ElevenLabs] ✅ Committing audio buffer (${audioChunksReceived} chunks, ${timeSinceLastAudio}ms since last audio)`);
                             elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
                             if (autoResponseCreate) {
                                 elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
                             }
-                            console.log('[ElevenLabs] ✅ Committed audio buffer');
+                            audioChunksReceived = 0; // Reset counter
                         } catch (e) {
                             console.error('[ElevenLabs] ❌ Commit error:', e.message || e);
                         }
@@ -137,7 +141,15 @@ class WebSocketProxy {
             infobipWs.on('message', (message) => {
                 try {
                     if (typeof message === 'string') {
+                        console.log('[Infobip] Received JSON message:', message);
                         return; // JSON control events ignored
+                    }
+
+                    audioChunksReceived++;
+                    lastAudioTime = Date.now();
+
+                    if (audioChunksReceived % 50 === 0) {
+                        console.log(`[Infobip → ElevenLabs] Sent ${audioChunksReceived} audio chunks`);
                     }
 
                     if (elevenLabsWs?.readyState === WebSocket.OPEN) {
@@ -146,6 +158,8 @@ class WebSocketProxy {
                             audio: Buffer.from(message).toString('base64')
                         }));
                         scheduleCommit();
+                    } else {
+                        console.warn(`[Infobip] Cannot send audio - ElevenLabs WS not open (state: ${elevenLabsWs?.readyState})`);
                     }
                 } catch (error) {
                     console.error('[Infobip] Error processing message:', error);

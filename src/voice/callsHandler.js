@@ -127,20 +127,29 @@ class CallsHandler {
             // Get additional user data for context - simplified to avoid timeout issues
             let loanApplications = [];
             let recentTransactions = [];
+            let dataFetchErrors = [];
 
             try {
                 loanApplications = await databaseManager.getUserLoanApplications(user.id) || [];
+                console.log(`✅ Fetched ${loanApplications.length} loan application(s) for user ${user.id}`);
             } catch (error) {
-                console.log(`⚠️ Failed to get loan applications:`, error.message);
+                console.error(`❌ Failed to get loan applications for user ${user.id}:`, error.message);
+                dataFetchErrors.push({ type: 'loan_applications', error: error.message });
             }
 
             try {
                 recentTransactions = await databaseManager.getUserTransactions(user.id, 3) || [];
+                console.log(`✅ Fetched ${recentTransactions.length} recent transaction(s) for user ${user.id}`);
             } catch (error) {
-                console.log(`⚠️ Failed to get transactions:`, error.message);
+                console.error(`❌ Failed to get transactions for user ${user.id}:`, error.message);
+                dataFetchErrors.push({ type: 'transactions', error: error.message });
             }
 
-            return {
+            if (dataFetchErrors.length > 0) {
+                console.warn(`⚠️  ${dataFetchErrors.length} data fetch error(s) occurred. Context will be incomplete.`);
+            }
+
+            const userContext = {
                 ...user,
                 loanApplications,
                 recentTransactions,
@@ -148,8 +157,25 @@ class CallsHandler {
                 phoneNumber: user.phoneNumber || user.phone_number || standardizedPhone,
                 // Add some contextual information for the AI
                 lastCallDate: user.lastCallAt ? new Date(user.lastCallAt).toLocaleDateString() : 'First call',
-                callCount: user.callCount + 1
+                callCount: user.callCount + 1,
+                // Add error tracking
+                _dataFetchErrors: dataFetchErrors.length > 0 ? dataFetchErrors : undefined
             };
+
+            // Validate critical fields before returning
+            const requiredFields = ['name', 'phoneNumber', 'fakeAccountNumber', 'fakeAccountBalance'];
+            const missingRequiredFields = requiredFields.filter(field => !userContext[field]);
+
+            if (missingRequiredFields.length > 0) {
+                console.error(`❌ CRITICAL: Missing required fields in user context:`, missingRequiredFields);
+                console.error(`❌ This may cause dynamic variables to fail. User data:`, {
+                    id: user.id,
+                    phoneNumber: userContext.phoneNumber,
+                    name: userContext.name
+                });
+            }
+
+            return userContext;
 
         } catch (error) {
             console.error('❌ Error identifying caller:', error);
@@ -165,6 +191,15 @@ class CallsHandler {
     async createDialogWithAI(callId, userContext) {
         try {
             console.log(`🔗 Creating dialog for call ${callId}...`);
+            console.log(`📊 Customer context summary:`, {
+                name: userContext.name,
+                company: userContext.companyName,
+                loanStatus: userContext.loanApplicationStatus,
+                loanAppsCount: userContext.loanApplications?.length || 0,
+                transactionsCount: userContext.recentTransactions?.length || 0,
+                callCount: userContext.callCount,
+                fraudScenario: userContext.fraudScenario
+            });
 
             // Encode customer context as query parameter for WebSocket
             const customerContextParam = encodeURIComponent(JSON.stringify(userContext));

@@ -21,8 +21,11 @@ class WebSocketProxy {
             let elevenLabsWs = null;
             let commitTimer = null;
             let audioChunksReceived = 0;
+            let audioChunksSinceLastCommit = 0;
             let lastAudioTime = Date.now();
+            let lastCommitTime = Date.now();
             const idleCommitMs = Number(process.env.ELEVENLABS_IDLE_COMMIT_MS || 500);
+            const maxCommitIntervalMs = Number(process.env.ELEVENLABS_MAX_COMMIT_INTERVAL_MS || 2000);
             const autoResponseCreate = (process.env.ELEVENLABS_AUTO_RESPONSE_CREATE ?? 'true').toLowerCase() !== 'false';
 
             const clearCommit = () => {
@@ -32,22 +35,36 @@ class WebSocketProxy {
                 }
             };
 
+            const doCommit = () => {
+                if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN && audioChunksSinceLastCommit > 0) {
+                    try {
+                        const timeSinceLastCommit = Date.now() - lastCommitTime;
+                        console.log(`[ElevenLabs] ✅ Committing audio buffer (${audioChunksSinceLastCommit} chunks, ${timeSinceLastCommit}ms since last commit)`);
+                        elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+                        if (autoResponseCreate) {
+                            elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
+                        }
+                        audioChunksSinceLastCommit = 0;
+                        lastCommitTime = Date.now();
+                    } catch (e) {
+                        console.error('[ElevenLabs] ❌ Commit error:', e.message || e);
+                    }
+                }
+            };
+
             const scheduleCommit = () => {
+                // Force commit if we haven't committed in maxCommitIntervalMs (prevents infinite buffering)
+                const timeSinceLastCommit = Date.now() - lastCommitTime;
+                if (timeSinceLastCommit >= maxCommitIntervalMs) {
+                    console.log(`[ElevenLabs] ⚡ Force committing - ${timeSinceLastCommit}ms since last commit`);
+                    doCommit();
+                    return;
+                }
+
+                // Otherwise schedule idle commit
                 clearCommit();
                 commitTimer = setTimeout(() => {
-                    if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) {
-                        try {
-                            const timeSinceLastAudio = Date.now() - lastAudioTime;
-                            console.log(`[ElevenLabs] ✅ Committing audio buffer (${audioChunksReceived} chunks, ${timeSinceLastAudio}ms since last audio)`);
-                            elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-                            if (autoResponseCreate) {
-                                elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
-                            }
-                            audioChunksReceived = 0; // Reset counter
-                        } catch (e) {
-                            console.error('[ElevenLabs] ❌ Commit error:', e.message || e);
-                        }
-                    }
+                    doCommit();
                 }, idleCommitMs);
             };
 
@@ -146,6 +163,7 @@ class WebSocketProxy {
                     }
 
                     audioChunksReceived++;
+                    audioChunksSinceLastCommit++;
                     lastAudioTime = Date.now();
 
                     if (audioChunksReceived % 50 === 0) {

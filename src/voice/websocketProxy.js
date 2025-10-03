@@ -326,6 +326,10 @@ class WebSocketProxy {
                     elevenLabsWs.on('message', (data) => {
                         try {
                             const message = JSON.parse(data);
+
+                            // Log ALL message types to debug audio flow
+                            console.log(`[ElevenLabs] 📥 Received message type: ${message.type}`);
+
                             switch (message.type) {
                                 case 'conversation_initiation_metadata':
                                     console.log('[ElevenLabs] ✅ Conversation initialized successfully');
@@ -333,9 +337,35 @@ class WebSocketProxy {
                                     console.log('[ElevenLabs] 🤖 Agent ready with personalized context');
                                     break;
                                 case 'audio': {
-                                    const buff = Buffer.from(message.audio_event.audio_base_64, 'base64');
-                                    if (infobipWs.readyState === WebSocket.OPEN) {
-                                        infobipWs.send(buff);
+                                    console.log('[ElevenLabs] 🔊 AUDIO EVENT RECEIVED!');
+                                    console.log('[ElevenLabs] 🔊 Message keys:', Object.keys(message));
+
+                                    // Check different possible audio field locations
+                                    let audioData = null;
+                                    if (message.audio_event?.audio_base_64) {
+                                        audioData = message.audio_event.audio_base_64;
+                                        console.log('[ElevenLabs] 🔊 Audio found at: message.audio_event.audio_base_64');
+                                    } else if (message.audio_base_64) {
+                                        audioData = message.audio_base_64;
+                                        console.log('[ElevenLabs] 🔊 Audio found at: message.audio_base_64');
+                                    } else if (message.audio) {
+                                        audioData = message.audio;
+                                        console.log('[ElevenLabs] 🔊 Audio found at: message.audio');
+                                    } else {
+                                        console.error('[ElevenLabs] ❌ NO AUDIO DATA FOUND IN MESSAGE');
+                                        console.error('[ElevenLabs] ❌ Message structure:', JSON.stringify(message, null, 2));
+                                    }
+
+                                    if (audioData) {
+                                        const buff = Buffer.from(audioData, 'base64');
+                                        console.log('[ElevenLabs] 🔊 Audio buffer size:', buff.length, 'bytes');
+
+                                        if (infobipWs.readyState === WebSocket.OPEN) {
+                                            infobipWs.send(buff);
+                                            console.log('[ElevenLabs → Infobip] ✅ Sent audio chunk');
+                                        } else {
+                                            console.error('[ElevenLabs → Infobip] ❌ Cannot send audio - Infobip WS not open. State:', infobipWs.readyState);
+                                        }
                                     }
                                     break;
                                 }

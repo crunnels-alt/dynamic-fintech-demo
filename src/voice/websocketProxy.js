@@ -59,7 +59,24 @@ class WebSocketProxy {
                             type: 'conversation_initiation_client_data',
                             conversation_config_override: {
                                 agent: {
-                                    first_message: "Hello! Thank you for calling Infobip Capital. I'm your AI banking assistant. How can I help you today?"
+                                    prompt: {
+                                        prompt: "You are a helpful AI assistant for Infobip Capital, a modern fintech platform. Greet the caller warmly and ask how you can help them today."
+                                    },
+                                    first_message: "Hello! Welcome to Infobip Capital. How can I assist you today?",
+                                    language: "en"
+                                },
+                                tts: {
+                                    model_id: "eleven_turbo_v2_5"
+                                },
+                                asr: {
+                                    quality: "high",
+                                    keywords: []
+                                },
+                                vad: {
+                                    enabled: true,
+                                    threshold: 0.5,
+                                    prefix_padding_ms: 300,
+                                    silence_duration_ms: 500
                                 }
                             }
                         };

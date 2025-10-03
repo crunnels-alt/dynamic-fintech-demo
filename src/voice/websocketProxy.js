@@ -46,7 +46,6 @@ class WebSocketProxy {
 Be helpful, professional, and secure in all interactions.
 If users ask about sensitive operations like fraud, offer to transfer them to a live agent.`,
                                     },
-                                    first_message: "Hello! Thank you for calling Infobip Capital. How can I help you today?",
                                     language: "en"
                                 }
                             }

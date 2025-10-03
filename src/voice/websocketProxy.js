@@ -202,11 +202,11 @@ class WebSocketProxy {
                     }
 
                     if (elevenLabsWs?.readyState === WebSocket.OPEN) {
+                        // Use the OLD API format that was working on Sept 26
                         elevenLabsWs.send(JSON.stringify({
-                            type: 'input_audio_buffer.append',
-                            audio: Buffer.from(message).toString('base64')
+                            user_audio_chunk: Buffer.from(message).toString('base64')
                         }));
-                        scheduleCommit();
+                        // No need to schedule commits with old API - it handles audio automatically
                     } else {
                         console.warn(`[Infobip] Cannot send audio - ElevenLabs WS not open (state: ${elevenLabsWs?.readyState})`);
                     }

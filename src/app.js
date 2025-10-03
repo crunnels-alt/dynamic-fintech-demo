@@ -88,13 +88,14 @@ async function startServer() {
             }
 
             console.log('\n🎯 Ready for Dev Days NYC demo!');
-
-            // Start WebSocket proxy for voice calls using the same server
-            console.log('🔌 Starting WebSocket proxy for voice integration...');
-            const wsProxy = new WebSocketProxy();
-            WebSocketProxy.setInstance(wsProxy); // Store singleton instance
-            wsProxy.attachToServer(server);
         });
+
+        // Start WebSocket proxy for voice calls using the same server
+        console.log('🔌 Starting WebSocket proxy for voice integration...');
+        const wsProxy = new WebSocketProxy();
+        WebSocketProxy.setInstance(wsProxy); // Store singleton instance
+        await wsProxy.attachToServer(server); // Wait for signed URL pool to initialize
+        console.log('✅ WebSocket proxy initialized with signed URL pool');
 
     } catch (error) {
         console.error('❌ Failed to start server:', error);
@@ -106,6 +107,11 @@ async function startServer() {
 process.on('SIGINT', async () => {
     console.log('\n🔄 Shutting down server gracefully...');
     try {
+        const wsProxy = WebSocketProxy.getInstance();
+        if (wsProxy) {
+            wsProxy.stop();
+            console.log('✅ WebSocket proxy stopped');
+        }
         await databaseManager.close();
         console.log('✅ Database connection closed');
         process.exit(0);
@@ -118,6 +124,11 @@ process.on('SIGINT', async () => {
 process.on('SIGTERM', async () => {
     console.log('\n🔄 Received SIGTERM, shutting down gracefully...');
     try {
+        const wsProxy = WebSocketProxy.getInstance();
+        if (wsProxy) {
+            wsProxy.stop();
+            console.log('✅ WebSocket proxy stopped');
+        }
         await databaseManager.close();
         console.log('✅ Database connection closed');
         process.exit(0);

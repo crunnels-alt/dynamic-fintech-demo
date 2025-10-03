@@ -158,3 +158,34 @@ To test dynamic variables:
 ## Contact
 
 For questions about this implementation, contact the DevRel team.
+
+## Latest Optimization: Signed URL Pool (v2)
+
+**Date**: October 3, 2025  
+**Objective**: Reduce session setup latency to prevent 2-second call timeout
+
+### Implementation Details
+
+**New Component**: `src/voice/SignedUrlPool.js`
+- Maintains pool of 3-10 pre-fetched ElevenLabs signed WebSocket URLs
+- Automatically refills when URLs are consumed
+- Expires URLs after 5 minutes (configurable)
+- Fallback to direct API call if pool is empty
+
+**Changes Made**:
+1. Created `SignedUrlPool` class with automatic pool maintenance
+2. Modified `websocketProxy.js` to use pool instead of direct API calls
+3. Updated `app.js` to initialize pool on server startup
+4. Added graceful shutdown to stop pool maintenance
+
+**Expected Impact**:
+- Eliminates ~150ms signed URL API call from critical path
+- Reduces session setup time from ~1582ms to ~1432ms
+- Should bring total setup time under potential 1500ms timeout threshold
+
+**Rollback Instructions**:
+```bash
+git checkout checkpoint-pre-signed-url-pool
+```
+
+This will restore the code to the state before signed URL pool implementation.

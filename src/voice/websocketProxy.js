@@ -2,6 +2,7 @@ const WebSocket = require('ws');
 const http = require('http');
 const fetch = require('node-fetch');
 const callsHandler = require('./callsHandler');
+const SignedUrlPool = require('./SignedUrlPool');
 
 class WebSocketProxy {
     constructor() {
@@ -11,6 +12,9 @@ class WebSocketProxy {
 
         this.server = http.createServer();
         this.wss = new WebSocket.Server({ server: this.server });
+
+        // Initialize signed URL pool
+        this.signedUrlPool = new SignedUrlPool(() => this.getSignedUrl());
 
         this.setupWebSocketServer();
     }
@@ -92,7 +96,8 @@ class WebSocketProxy {
             // Set up ElevenLabs connection
             (async () => {
                 try {
-                    const signedUrl = await this.getSignedUrl();
+                    // Use signed URL pool instead of direct API call (saves ~150ms)
+                    const signedUrl = await this.signedUrlPool.get();
                     elevenLabsWs = new WebSocket(signedUrl);
 
                     elevenLabsWs.on('open', () => {
@@ -289,13 +294,19 @@ class WebSocketProxy {
         }
     }
 
-    start() {
+    async start() {
+        // Start the signed URL pool
+        await this.signedUrlPool.start();
+
         this.server.listen(this.port, () => {
             console.log(`WebSocket Proxy Server running on port ${this.port}`);
         });
     }
 
-    attachToServer(httpServer) {
+    async attachToServer(httpServer) {
+        // Start the signed URL pool
+        await this.signedUrlPool.start();
+
         this.wss = new WebSocket.Server({
             server: httpServer,
             path: '/websocket-voice'
@@ -308,6 +319,10 @@ class WebSocketProxy {
 
     stop() {
         console.log('Stopping WebSocket Proxy Server...');
+
+        // Stop the signed URL pool
+        this.signedUrlPool.stop();
+
         this.wss.close();
         this.server.close();
     }

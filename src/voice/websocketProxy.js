@@ -166,11 +166,19 @@ class WebSocketProxy {
                         return; // JSON control events ignored
                     }
 
-                    // Check if binary message is actually JSON
-                    const msgStr = message.toString('utf8');
-                    if (msgStr.startsWith('{') || msgStr.startsWith(' {')) {
-                        console.log('[Infobip] Received JSON binary message:', msgStr.substring(0, 100));
-                        return; // JSON control events ignored
+                    // Check if binary message is actually JSON (proper detection)
+                    // JSON control messages are usually ASCII text starting with { or space
+                    // Real audio will have binary data throughout
+                    try {
+                        const msgStr = message.toString('utf8');
+                        // Only treat as JSON if it's valid JSON AND contains expected keys
+                        if ((msgStr.startsWith('{') || msgStr.startsWith(' {')) &&
+                            (msgStr.includes('"call-id"') || msgStr.includes('"event"'))) {
+                            console.log('[Infobip] Received JSON control message:', msgStr.substring(0, 100));
+                            return; // JSON control events ignored
+                        }
+                    } catch (e) {
+                        // If toString fails, it's definitely binary audio
                     }
 
                     audioChunksReceived++;

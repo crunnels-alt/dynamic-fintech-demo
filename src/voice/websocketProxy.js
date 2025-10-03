@@ -58,6 +58,46 @@ class WebSocketProxy {
             const maxCommitIntervalMs = Number(process.env.ELEVENLABS_MAX_COMMIT_INTERVAL_MS || 2000);
             const autoResponseCreate = (process.env.ELEVENLABS_AUTO_RESPONSE_CREATE ?? 'true').toLowerCase() !== 'false';
 
+            // Keepalive configuration
+            const continuousKeepalive = (process.env.ELEVENLABS_CONTINUOUS_KEEPALIVE ?? 'true').toLowerCase() === 'true';
+            const keepaliveIntervalMs = Number(process.env.ELEVENLABS_TTS_KEEPALIVE_INTERVAL_MS || 20);
+            let lastTtsTime = 0;
+            let keepaliveTimer = null;
+
+            // Generate PCM silence frame (16-bit PCM, 16kHz, mono, 20ms = 640 bytes)
+            const generateSilenceFrame = () => {
+                return Buffer.alloc(640, 0); // 320 samples * 2 bytes per sample = 640 bytes
+            };
+
+            // Continuous audio keepalive - sends silence when no TTS audio
+            const startAudioKeepalive = () => {
+                if (!continuousKeepalive) return;
+
+                keepaliveTimer = setInterval(() => {
+                    const now = Date.now();
+                    const timeSinceLastTts = now - lastTtsTime;
+
+                    // Only send silence if >100ms since last TTS (avoid interfering with active audio)
+                    if (timeSinceLastTts > 100 && infobipWs.readyState === WebSocket.OPEN) {
+                        try {
+                            const silenceFrame = generateSilenceFrame();
+                            infobipWs.send(silenceFrame);
+                        } catch (err) {
+                            console.error('[Keepalive] Error sending silence frame:', err.message);
+                        }
+                    }
+                }, keepaliveIntervalMs);
+
+                console.log(`[Keepalive] Started continuous audio keepalive (${keepaliveIntervalMs}ms interval)`);
+            };
+
+            const stopAudioKeepalive = () => {
+                if (keepaliveTimer) {
+                    clearInterval(keepaliveTimer);
+                    keepaliveTimer = null;
+                }
+            };
+
             // Set up WebSocket keepalive for Infobip connection
             const keepaliveInterval = setInterval(() => {
                 if (infobipWs.readyState === WebSocket.OPEN) {
@@ -159,6 +199,9 @@ class WebSocketProxy {
                         // Mark ElevenLabs as ready and flush buffered audio
                         elevenLabsReady = true;
 
+                        // Start audio keepalive to prevent Infobip timeout
+                        startAudioKeepalive();
+
                         if (audioBuffer.length > 0) {
                             console.log(`[Bridge] Flushing ${audioBuffer.length} buffered audio chunk(s) to ElevenLabs`);
                             audioBuffer.forEach(audioChunk => {
@@ -190,6 +233,8 @@ class WebSocketProxy {
                                     if (audioData && infobipWs.readyState === WebSocket.OPEN) {
                                         const buff = Buffer.from(audioData, 'base64');
                                         infobipWs.send(buff);
+                                        // Update last TTS time to prevent keepalive from interfering
+                                        lastTtsTime = Date.now();
                                     } else if (!audioData) {
                                         console.error('[ElevenLabs] Audio event missing audio_base_64 field');
                                     }
@@ -238,6 +283,7 @@ class WebSocketProxy {
 
                     elevenLabsWs.on('close', (code, reason) => {
                         clearCommit();
+                        stopAudioKeepalive();
                         console.log(`[ElevenLabs] Connection closed (code: ${code}${reason ? `, reason: ${reason}` : ''})`);
 
                         if (code !== 1000 && code !== 1005) {
@@ -299,6 +345,7 @@ class WebSocketProxy {
             infobipWs.on('close', (code, reason) => {
                 clearCommit();
                 clearInterval(keepaliveInterval);
+                stopAudioKeepalive();
                 console.log(`[Infobip] Client disconnected (code: ${code})`);
                 if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                     elevenLabsWs.close();

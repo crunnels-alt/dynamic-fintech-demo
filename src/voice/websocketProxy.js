@@ -160,8 +160,16 @@ class WebSocketProxy {
             // Handle messages from Infobip
             infobipWs.on('message', (message) => {
                 try {
+                    // Try to parse as JSON first (control messages)
                     if (typeof message === 'string') {
-                        console.log('[Infobip] Received JSON message:', message);
+                        console.log('[Infobip] Received JSON string message:', message);
+                        return; // JSON control events ignored
+                    }
+
+                    // Check if binary message is actually JSON
+                    const msgStr = message.toString('utf8');
+                    if (msgStr.startsWith('{') || msgStr.startsWith(' {')) {
+                        console.log('[Infobip] Received JSON binary message:', msgStr.substring(0, 100));
                         return; // JSON control events ignored
                     }
 
@@ -169,9 +177,9 @@ class WebSocketProxy {
                     audioChunksSinceLastCommit++;
                     lastAudioTime = Date.now();
 
-                    // Log first chunk details for debugging
+                    // Log first REAL audio chunk details for debugging
                     if (audioChunksReceived === 1) {
-                        console.log(`[Infobip] First audio chunk: ${message.length} bytes, type: ${typeof message}`);
+                        console.log(`[Infobip] First REAL audio chunk: ${message.length} bytes`);
                         console.log(`[Infobip] First 20 bytes (hex):`, Buffer.from(message).slice(0, 20).toString('hex'));
                     }
 

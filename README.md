@@ -1,15 +1,15 @@
 # Infobip Capital - AI Voice Banking Demo
 
-> **🎉 STATUS: FULLY OPERATIONAL** - Complete end-to-end voice banking with personalized greetings, real-time balance access, and dynamic database integration!
+> **STATUS: FULLY OPERATIONAL** - Complete end-to-end voice banking with personalized greetings, real-time balance access, and dynamic database integration!
 
 An interactive fintech demo showcasing Infobip's Voice API with ElevenLabs Conversational AI for Dev Days NYC 2025. Experience the future of banking with AI-powered voice assistance.
 
-## 📞 Live Demo
+## Live Demo
 - **Registration**: https://victorious-friendship-production-39d6.up.railway.app  
 - **Call Number**: +1 650 718 5356
 - **Experience**: "Hello [Your Name]! Thank you for calling Infobip Capital. Your current account balance is $X,XXX.XX. How can I help you today?"
 
-## 🏦 Overview
+## Overview
 
 Infobip Capital demonstrates how modern financial institutions can leverage AI voice technology to provide:
 
@@ -19,7 +19,7 @@ Infobip Capital demonstrates how modern financial institutions can leverage AI v
 - **Account Services** - Voice-activated account management
 - **Personalized Customer Experience** - Dynamic data generation for realistic demos
 
-## 🚀 Features
+## Features
 
 ### Web Registration Portal
 - **Mobile-Optimized Form** - Responsive design with Infobip Capital branding
@@ -27,11 +27,11 @@ Infobip Capital demonstrates how modern financial institutions can leverage AI v
 - **Demo Account Generation** - Automatic creation of fake banking data
 - **SMS Confirmations** - Registration details sent via Infobip SMS API
 
-### AI Voice Banking (Coming Soon)
-- **Natural Language Processing** - Powered by OpenAI's Realtime API
+### AI Voice Banking
+- **Natural Language Processing** - Powered by ElevenLabs Conversational AI
 - **Caller Identification** - Phone number-based user lookup
 - **Dynamic Conversations** - Personalized responses based on user data
-- **Live Agent Handoff** - Seamless transfer for complex scenarios
+- **Continuous Audio Streaming** - Advanced keepalive for stable connections
 
 ### Demo Scenarios
 1. **Balance Inquiry** - "What's my account balance?"
@@ -40,12 +40,12 @@ Infobip Capital demonstrates how modern financial institutions can leverage AI v
 4. **Account Activation** - "Activate my new account"
 5. **Voice Registration** - Sign up for demo over the phone
 
-## 🛠️ Quick Start
+## Quick Start
 
 ### Prerequisites
-- Node.js 16+
+- Node.js 18+
 - Infobip account with Voice & SMS API access
-- OpenAI API key with Realtime API access
+- ElevenLabs API key with Conversational AI access
 
 ### Installation
 
@@ -68,6 +68,8 @@ npm run setup-db
 npm start
 ```
 
+**For complete setup instructions, see [SETUP.md](./SETUP.md)**
+
 ### Configuration
 
 Edit `.env` with your API credentials:
@@ -75,30 +77,29 @@ Edit `.env` with your API credentials:
 ```bash
 # Infobip Configuration
 INFOBIP_API_KEY=your_infobip_api_key
-INFOBIP_BASE_URL=your_infobip_base_url
-INFOBIP_APPLICATION_ID=your_application_id
+INFOBIP_BASE_URL=https://api.infobip.com
+MEDIA_STREAM_CONFIG_ID=your_config_id
 
-# SMS Configuration  
-INFOBIP_SMS_API_KEY=your_sms_api_key
-SMS_FROM_NUMBER=InfobipCapital
+# ElevenLabs Configuration
+ELEVENLABS_API_KEY=your_elevenlabs_api_key
+ELEVENLABS_AGENT_ID=your_agent_id
 
-# OpenAI Configuration
-OPENAI_API_KEY=your_openai_api_key
+# Webhook Configuration
+WEBHOOK_BASE_URL=your_deployment_url
 
 # Demo Settings
 DEMO_CALL_NUMBER=+1234567890
-LIVE_AGENT_NUMBER=+1234567890
 COMPANY_NAME=Infobip Capital
 ```
 
-## 📱 Demo Access
+## Demo Access
 
 1. **Web Form**: `http://localhost:3000`
 2. **Health Check**: `http://localhost:3000/api/health`
 3. **Demo Scenarios**: `http://localhost:3000/api/scenarios`
 4. **Admin Panel**: `http://localhost:3000/api/admin/users` (requires token)
 
-## 🎯 Usage
+## Usage
 
 ### 1. Register for Demo
 - Visit the web form at `http://localhost:3000`
@@ -121,25 +122,26 @@ COMPANY_NAME=Infobip Capital
 "Transfer me to a loan officer"
 ```
 
-## 🏗️ Architecture
+## Architecture
 
 ```
-📞 Phone Call → Infobip Voice API → OpenAI Realtime API
+Phone Call → Infobip Voice API → WebSocket Proxy → ElevenLabs AI
                                             ↓
-               Database ← Function Calls ← AI Assistant
+               Database ← Dynamic Variables ← AI Assistant
                   ↓
               SMS Alerts → Infobip SMS API
 ```
 
 ### Components
 - **Express.js Server** - RESTful API and web form hosting
-- **SQLite Database** - User profiles and fake banking data
-- **Infobip Voice API** - Phone call handling and SIP routing
+- **PostgreSQL/SQLite Database** - User profiles and banking data
+- **Infobip Voice API** - Phone call handling and media streaming
 - **Infobip SMS API** - Registration confirmations and alerts
-- **OpenAI Realtime API** - Natural language understanding and responses
-- **React/Vanilla JS Frontend** - Mobile-optimized registration form
+- **ElevenLabs Conversational AI** - Natural language understanding and responses
+- **WebSocket Proxy** - Bidirectional audio streaming bridge
+- **Vanilla JS Frontend** - Mobile-optimized registration form
 
-## 🗄️ Database Schema
+## Database Schema
 
 ### Users Table
 - User registration information
@@ -154,7 +156,7 @@ COMPANY_NAME=Infobip Capital
 - Officer/agent information
 - Call logs for analytics
 
-## 📊 API Endpoints
+## API Endpoints
 
 ### Public Endpoints
 - `GET /` - Registration form
@@ -162,16 +164,16 @@ COMPANY_NAME=Infobip Capital
 - `GET /api/health` - Service health check
 - `GET /api/scenarios` - Demo scenarios info
 
-### Voice API Webhooks (Coming Soon)
-- `POST /webhook/voice/inbound` - Incoming call handling
-- `POST /webhook/voice/connected` - Call connection events
-- `POST /webhook/voice/hangup` - Call termination
+### Voice API Webhooks
+- `POST /api/webhooks/calls/received` - Incoming call handling
+- `WS /websocket-voice` - Media streaming endpoint
+- `GET /knowledge-base` - Dynamic knowledge base for AI agent
 
 ### Admin Endpoints
 - `GET /api/admin/users` - User management
 - `GET /api/user/:phoneNumber` - User lookup
 
-## 🔒 Security Features
+## Security Features
 
 - Input validation and sanitization
 - Phone number verification
@@ -179,7 +181,7 @@ COMPANY_NAME=Infobip Capital
 - Secure webhook signature validation
 - Environment-based configuration
 
-## 📈 Analytics & Monitoring
+## Analytics & Monitoring
 
 - Real-time health checks
 - Call success/failure tracking
@@ -187,32 +189,39 @@ COMPANY_NAME=Infobip Capital
 - Service dependency monitoring
 - Error logging and alerting
 
-## 🚀 Production Deployment
+## Production Deployment
 
-### Environment Setup
-- Set `NODE_ENV=production`
-- Configure production database
-- Set up SSL/TLS certificates
-- Configure reverse proxy (nginx)
+Deploy to Railway with one command:
 
-### Scaling Considerations
-- Redis for session management
-- Database connection pooling
-- Load balancing for multiple instances
-- CDN for static assets
-- Monitoring and alerting setup
+```bash
+railway up
+```
 
-## 🤝 Contributing
+**For complete deployment instructions, see [SETUP.md](./SETUP.md)**
+
+### Key Features
+- Auto-scaling with Railway
+- PostgreSQL database support
+- Continuous audio keepalive for stable calls
+- Dynamic variable injection for personalization
+- Real-time health monitoring
+
+## Documentation
+
+- **[SETUP.md](./SETUP.md)** - Complete setup and deployment guide
+- **[CLAUDE.md](./CLAUDE.md)** - Technical implementation notes and troubleshooting
+
+## About This Demo
 
 This demo showcases the power of combining:
 - **Infobip's Voice & SMS APIs** for robust telecommunications
-- **OpenAI's Realtime API** for natural conversation capabilities
+- **ElevenLabs Conversational AI** for natural, human-like interactions
 - **Modern web technologies** for scalable, responsive interfaces
 - **Financial sector use cases** for practical business applications
 
 Perfect for demonstrating AI-powered customer service, voice banking, and telecommunications integration at conferences and demos.
 
-## 📞 Support
+## Support
 
 For questions about this demo or Infobip's APIs:
 - Visit [Infobip Developer Hub](https://www.infobip.com/developers)
@@ -221,4 +230,4 @@ For questions about this demo or Infobip's APIs:
 
 ---
 
-**Built for Dev Days NYC 2025** • Showcasing the future of AI-powered banking with Infobip's communication platform.# Build trigger Wed Sep 24 21:08:22 PDT 2025
+**Built for Dev Days NYC 2025** • Showcasing the future of AI-powered banking with Infobip's communication platform.

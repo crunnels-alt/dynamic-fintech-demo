@@ -1,7 +1,7 @@
-// Load environment variables (Railway provides them directly in production)
-if (process.env.NODE_ENV !== 'production') {
-    require('dotenv').config();
-}
+// Load environment variables
+// Railway provides DATABASE_URL as a service variable which needs to be referenced
+// Loading dotenv is safe - it won't override existing env vars
+require('dotenv').config();
 
 // Debug: Log some key environment variables
 console.log('🔧 Environment Debug:');

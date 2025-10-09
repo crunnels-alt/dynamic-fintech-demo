@@ -272,24 +272,6 @@ class WebSocketProxy {
                         // Mark ElevenLabs as ready and flush buffered audio
                         elevenLabsReady = true;
 
-                        // Check for fraud scenario and initiate transfer if flagged
-                        if (customerContext && customerContext.fraudScenario && matchedCallId) {
-                            console.log('[Fraud] 🚨 Fraud alert detected for:', customerContext.name);
-                            console.log('[Fraud] Will transfer to fraud prevention specialist after greeting');
-
-                            // Wait for AI to say the fraud alert message (give it ~5 seconds)
-                            // then initiate the transfer
-                            setTimeout(async () => {
-                                try {
-                                    console.log('[Fraud] Initiating transfer to live agent...');
-                                    await callsHandler.transferToLiveAgent(matchedCallId, 'fraud_alert');
-                                    console.log('[Fraud] ✅ Transfer initiated successfully');
-                                } catch (transferError) {
-                                    console.error('[Fraud] ❌ Failed to transfer call:', transferError.message);
-                                }
-                            }, 5000);
-                        }
-
                         // Start audio keepalive to prevent Infobip timeout
                         const keepaliveStartTime = Date.now() - connectionStartTime;
                         console.log(`[Timing] Keepalive starting at ${keepaliveStartTime}ms from Infobip connection`);

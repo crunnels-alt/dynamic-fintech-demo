@@ -26,25 +26,82 @@ class WebSocketProxy {
 
             // Extract customer context from active calls
             let customerContext = null;
+            let matchedCallId = null;
 
             console.log('[Bridge] New Infobip WebSocket connection established');
             console.log('[Bridge] Request URL:', req.url);
+            console.log('[Bridge] Request headers:', JSON.stringify(req.headers, null, 2));
 
-            // Retrieve context from most recent active call
-            const activeCalls = callsHandler.getActiveCalls();
+            // Try to extract call ID or dialog ID from the WebSocket connection
+            // Infobip may send this in the URL query params or initial message
+            let callIdFromUrl = null;
+            let dialogIdFromUrl = null;
 
-            if (activeCalls.length > 0) {
-                const recentCall = activeCalls[activeCalls.length - 1];
-                const callSession = callsHandler.getCallSession(recentCall.callId);
+            if (req.url) {
+                const url = new URL(req.url, 'http://localhost');
+                callIdFromUrl = url.searchParams.get('callId') || url.searchParams.get('call-id');
+                dialogIdFromUrl = url.searchParams.get('dialogId') || url.searchParams.get('dialog-id');
 
+                if (callIdFromUrl) {
+                    console.log('[Bridge] Found callId in URL:', callIdFromUrl);
+                }
+                if (dialogIdFromUrl) {
+                    console.log('[Bridge] Found dialogId in URL:', dialogIdFromUrl);
+                }
+            }
+
+            // Strategy 1: If we have a callId from the URL, look up that specific session
+            if (callIdFromUrl) {
+                const callSession = callsHandler.getCallSession(callIdFromUrl);
                 if (callSession && callSession.userContext) {
                     customerContext = callSession.userContext;
-                    console.log('[Bridge] Retrieved context for:', customerContext.name);
+                    matchedCallId = callIdFromUrl;
+                    console.log('[Bridge] Matched call by URL callId:', callIdFromUrl);
+                }
+            }
+
+            // Strategy 2: If no match yet, look for dialogId match in active calls
+            if (!customerContext && dialogIdFromUrl) {
+                const activeCalls = callsHandler.getActiveCalls();
+                for (const call of activeCalls) {
+                    const session = callsHandler.getCallSession(call.callId);
+                    if (session && session.dialogId === dialogIdFromUrl) {
+                        customerContext = session.userContext;
+                        matchedCallId = call.callId;
+                        console.log('[Bridge] Matched call by dialogId:', dialogIdFromUrl);
+                        break;
+                    }
+                }
+            }
+
+            // Strategy 3: Wait for initial message with call metadata (will be handled below)
+            // Strategy 4: Fall back to most recent call (existing behavior) with warning
+            if (!customerContext) {
+                const activeCalls = callsHandler.getActiveCalls();
+
+                if (activeCalls.length > 0) {
+                    const recentCall = activeCalls[activeCalls.length - 1];
+                    const callSession = callsHandler.getCallSession(recentCall.callId);
+
+                    if (callSession && callSession.userContext) {
+                        customerContext = callSession.userContext;
+                        matchedCallId = recentCall.callId;
+
+                        if (activeCalls.length > 1) {
+                            console.warn('[Bridge] ⚠️  Multiple active calls detected! Using most recent call as fallback.');
+                            console.warn('[Bridge] ⚠️  This may cause issues with concurrent callers.');
+                            console.warn('[Bridge] Active calls:', activeCalls.map(c => c.callId));
+                        } else {
+                            console.log('[Bridge] Retrieved context for:', customerContext.name);
+                        }
+                    } else {
+                        console.warn('[Bridge] Call session found but no user context');
+                    }
                 } else {
-                    console.warn('[Bridge] Call session found but no user context');
+                    console.warn('[Bridge] No active calls found');
                 }
             } else {
-                console.warn('[Bridge] No active calls found');
+                console.log('[Bridge] ✅ Successfully matched context for:', customerContext.name, '(callId:', matchedCallId, ')');
             }
 
             let elevenLabsWs = null;
@@ -328,9 +385,49 @@ class WebSocketProxy {
             // Handle messages from Infobip
             infobipWs.on('message', (message) => {
                 try {
-                    // Ignore JSON control messages
+                    // Handle JSON control messages (may contain call metadata)
                     if (typeof message === 'string') {
-                        return;
+                        try {
+                            const controlMsg = JSON.parse(message);
+
+                            // Strategy 3: Extract call/dialog ID from control message if we don't have context yet
+                            if (!customerContext && (controlMsg['call-id'] || controlMsg['dialog-id'])) {
+                                const msgCallId = controlMsg['call-id'];
+                                const msgDialogId = controlMsg['dialog-id'];
+
+                                console.log('[Bridge] Found call metadata in control message:', {
+                                    callId: msgCallId,
+                                    dialogId: msgDialogId
+                                });
+
+                                // Try to match by call ID first
+                                if (msgCallId) {
+                                    const callSession = callsHandler.getCallSession(msgCallId);
+                                    if (callSession && callSession.userContext) {
+                                        customerContext = callSession.userContext;
+                                        matchedCallId = msgCallId;
+                                        console.log('[Bridge] ✅ Matched call by control message callId:', msgCallId);
+                                    }
+                                }
+
+                                // Try to match by dialog ID if still no match
+                                if (!customerContext && msgDialogId) {
+                                    const activeCalls = callsHandler.getActiveCalls();
+                                    for (const call of activeCalls) {
+                                        const session = callsHandler.getCallSession(call.callId);
+                                        if (session && session.dialogId === msgDialogId) {
+                                            customerContext = session.userContext;
+                                            matchedCallId = call.callId;
+                                            console.log('[Bridge] ✅ Matched call by control message dialogId:', msgDialogId);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            // Not valid JSON, ignore
+                        }
+                        return; // Don't process JSON messages as audio
                     }
 
                     // Check if binary message is actually JSON control message
@@ -338,7 +435,47 @@ class WebSocketProxy {
                         const msgStr = message.toString('utf8');
                         if ((msgStr.startsWith('{') || msgStr.startsWith(' {')) &&
                             (msgStr.includes('"call-id"') || msgStr.includes('"event"'))) {
-                            return; // JSON control events ignored
+
+                            // Try to parse and extract metadata even from binary JSON messages
+                            try {
+                                const controlMsg = JSON.parse(msgStr);
+
+                                if (!customerContext && (controlMsg['call-id'] || controlMsg['dialog-id'])) {
+                                    const msgCallId = controlMsg['call-id'];
+                                    const msgDialogId = controlMsg['dialog-id'];
+
+                                    console.log('[Bridge] Found call metadata in binary control message:', {
+                                        callId: msgCallId,
+                                        dialogId: msgDialogId
+                                    });
+
+                                    if (msgCallId) {
+                                        const callSession = callsHandler.getCallSession(msgCallId);
+                                        if (callSession && callSession.userContext) {
+                                            customerContext = callSession.userContext;
+                                            matchedCallId = msgCallId;
+                                            console.log('[Bridge] ✅ Matched call by binary control message callId:', msgCallId);
+                                        }
+                                    }
+
+                                    if (!customerContext && msgDialogId) {
+                                        const activeCalls = callsHandler.getActiveCalls();
+                                        for (const call of activeCalls) {
+                                            const session = callsHandler.getCallSession(call.callId);
+                                            if (session && session.dialogId === msgDialogId) {
+                                                customerContext = session.userContext;
+                                                matchedCallId = call.callId;
+                                                console.log('[Bridge] ✅ Matched call by binary control message dialogId:', msgDialogId);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                // Parsing failed, ignore
+                            }
+
+                            return; // JSON control events ignored for audio processing
                         }
                     } catch (e) {
                         // If toString fails, it's definitely binary audio

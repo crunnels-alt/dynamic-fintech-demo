@@ -204,7 +204,9 @@ railway up
 ## Documentation
 
 - **[SETUP.md](./SETUP.md)** - Complete setup and deployment guide
+- **[ELEVENLABS_AGENT_PROMPT.md](./ELEVENLABS_AGENT_PROMPT.md)** - ElevenLabs agent configuration and prompt
 - **[CLAUDE.md](./CLAUDE.md)** - Technical implementation notes and troubleshooting
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Deep dive into system architecture
 
 ## About This Demo
 

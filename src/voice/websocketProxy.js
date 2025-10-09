@@ -240,6 +240,11 @@ class WebSocketProxy {
                         try {
                             const message = JSON.parse(data);
 
+                            // Debug: Log all message types to understand structure
+                            if (message.type !== 'audio' && message.type !== 'ping') {
+                                console.log(`[ElevenLabs Debug] Message type: ${message.type}`, JSON.stringify(message, null, 2));
+                            }
+
                             switch (message.type) {
                                 case 'conversation_initiation_metadata':
                                     console.log('[ElevenLabs] Conversation initialized:', message.conversation_initiation_metadata_event?.conversation_id);
@@ -278,10 +283,16 @@ class WebSocketProxy {
                                     }
                                     break;
                                 case 'user_transcript':
-                                    console.log(`[ElevenLabs] 🎤 User: "${message.user_transcription_event?.user_transcript || ''}"`);
+                                    const userText = message.user_transcription_event?.user_transcript || message.user_transcript || '';
+                                    if (userText) {
+                                        console.log(`\n[TRANSCRIPT] 🎤 User: "${userText}"`);
+                                    }
                                     break;
                                 case 'agent_response':
-                                    console.log(`[ElevenLabs] 🤖 Agent: "${message.agent_response_event?.agent_response || ''}"`);
+                                    const agentText = message.agent_response_event?.agent_response || message.agent_response || '';
+                                    if (agentText) {
+                                        console.log(`[TRANSCRIPT] 🤖 Agent: "${agentText}"\n`);
+                                    }
                                     break;
                                 case 'error':
                                     console.error('[ElevenLabs] Error:', message.error?.message || JSON.stringify(message));

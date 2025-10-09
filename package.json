@@ -22,6 +22,7 @@
   "author": "DevRel Team",
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/claude-code": "^2.0.11",
     "axios": "^1.12.2",
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",

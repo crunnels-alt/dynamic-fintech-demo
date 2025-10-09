@@ -21,7 +21,7 @@ Complete guide for setting up, configuring, and deploying the Dynamic Fintech De
 ### Required Services
 
 You'll need accounts and API keys from:
-- **Infobip** - Voice API and SMS API
+- **Infobip** - Voice API
 - **ElevenLabs** - Conversational AI
 - **Railway** - Hosting platform (optional for deployment)
 
@@ -29,12 +29,12 @@ You'll need accounts and API keys from:
 
 1. **Portal Access**
    - Log into [Infobip Portal](https://portal.infobip.com)
-   - Verify access to Voice & SMS services
+   - Verify access to Voice services
 
 2. **Get API Key**
    - Navigate to **Developers** → **API Keys**
    - Copy your existing API key OR create a new one
-   - Required permissions: Voice API, SMS API
+   - Required permissions: Voice API
 
 3. **Get Phone Number**
    - Go to **Numbers** → **My Numbers**
@@ -65,7 +65,6 @@ Create a `.env` file in the project root:
 # Infobip Configuration
 INFOBIP_API_KEY=your_infobip_api_key
 INFOBIP_BASE_URL=https://api.infobip.com
-INFOBIP_SMS_API_KEY=your_infobip_api_key  # Usually same as above
 MEDIA_STREAM_CONFIG_ID=your_config_id      # Set after Infobip config
 
 # ElevenLabs Configuration
@@ -389,7 +388,7 @@ Fill out the registration form with:
 - Company name
 - Demo scenario preference
 
-You should receive an SMS confirmation.
+You should see a success message with the demo call number.
 
 #### 2. Make a Test Call
 
@@ -584,7 +583,7 @@ Before your presentation:
 - [ ] Update webhook URLs in Infobip Portal
 - [ ] Update WebSocket URL in Media Stream Config
 - [ ] Update knowledge base URL in ElevenLabs (if used)
-- [ ] Test registration flow (web form → SMS)
+- [ ] Test registration flow (web form)
 - [ ] Test voice flow (call → AI conversation)
 - [ ] Verify all Railway environment variables are set
 - [ ] Check Railway logs for errors

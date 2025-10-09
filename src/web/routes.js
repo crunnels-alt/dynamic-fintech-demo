@@ -1,7 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const DatabaseFactory = require('../database/DatabaseFactory');
-const smsService = require('../utils/smsService');
 const { safeStringify } = require('../utils/jsonSanitizer');
 
 // Initialize database manager based on environment
@@ -206,15 +205,6 @@ router.post('/api/register', [
         // Register the user in the database
         const user = await databaseManager.registerUser(standardizedUserData);
 
-        // Send SMS confirmation
-        try {
-            const smsResult = await smsService.sendRegistrationConfirmation(user);
-            console.log('SMS sent successfully:', smsResult);
-        } catch (smsError) {
-            console.error('SMS sending failed:', smsError);
-            // Don't fail the registration if SMS fails
-        }
-
         // Return success response
         res.status(201).json({
             success: true,
@@ -313,20 +303,11 @@ router.get('/api/health', async (req, res) => {
         // Simplified health check - assume database is healthy to avoid timeouts
         let dbHealthy = true;
 
-        let smsStatus = 'not_configured';
-        try {
-            smsStatus = smsService.isConfigured() ? 'configured' : 'not_configured';
-        } catch (error) {
-            console.error('SMS service check failed:', error);
-            smsStatus = 'error';
-        }
-
         const health = {
             status: 'healthy',
             timestamp: new Date().toISOString(),
             services: {
                 database: dbHealthy ? 'healthy' : 'unhealthy',
-                sms: smsStatus,
                 voice: process.env.INFOBIP_API_KEY ? 'configured' : 'not_configured',
                 openai: process.env.OPENAI_API_KEY ? 'configured' : 'not_configured',
                 elevenlabs: process.env.ELEVENLABS_API_KEY ? 'configured' : 'not_configured'

@@ -63,7 +63,6 @@ async function startServer() {
         // Check service configurations
         const services = {
             database: '✅ Connected',
-            sms: process.env.INFOBIP_SMS_API_KEY || process.env.INFOBIP_API_KEY ? '✅ Configured' : '⚠️  Not configured',
             voice: process.env.INFOBIP_API_KEY ? '✅ Configured' : '⚠️  Not configured',
             openai: process.env.OPENAI_API_KEY ? '✅ Configured' : '⚠️  Not configured'
         };

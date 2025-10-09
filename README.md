@@ -25,7 +25,6 @@ Infobip Capital demonstrates how modern financial institutions can leverage AI v
 - **Mobile-Optimized Form** - Responsive design with Infobip Capital branding
 - **Real-time Validation** - Client and server-side input validation
 - **Demo Account Generation** - Automatic creation of fake banking data
-- **SMS Confirmations** - Registration details sent via Infobip SMS API
 
 ### AI Voice Banking
 - **Natural Language Processing** - Powered by ElevenLabs Conversational AI
@@ -44,7 +43,7 @@ Infobip Capital demonstrates how modern financial institutions can leverage AI v
 
 ### Prerequisites
 - Node.js 18+
-- Infobip account with Voice & SMS API access
+- Infobip account with Voice API access
 - ElevenLabs API key with Conversational AI access
 
 ### Installation
@@ -104,8 +103,7 @@ COMPANY_NAME=Infobip Capital
 ### 1. Register for Demo
 - Visit the web form at `http://localhost:3000`
 - Fill out your information with demo preferences
-- Receive SMS confirmation with account details
-- Note the demo call number provided
+- Note the demo call number provided on the success screen
 
 ### 2. Try Voice Banking
 - Call the provided demo number
@@ -128,15 +126,12 @@ COMPANY_NAME=Infobip Capital
 Phone Call → Infobip Voice API → WebSocket Proxy → ElevenLabs AI
                                             ↓
                Database ← Dynamic Variables ← AI Assistant
-                  ↓
-              SMS Alerts → Infobip SMS API
 ```
 
 ### Components
 - **Express.js Server** - RESTful API and web form hosting
 - **PostgreSQL/SQLite Database** - User profiles and banking data
 - **Infobip Voice API** - Phone call handling and media streaming
-- **Infobip SMS API** - Registration confirmations and alerts
 - **ElevenLabs Conversational AI** - Natural language understanding and responses
 - **WebSocket Proxy** - Bidirectional audio streaming bridge
 - **Vanilla JS Frontend** - Mobile-optimized registration form
@@ -214,7 +209,7 @@ railway up
 ## About This Demo
 
 This demo showcases the power of combining:
-- **Infobip's Voice & SMS APIs** for robust telecommunications
+- **Infobip's Voice API** for robust telecommunications
 - **ElevenLabs Conversational AI** for natural, human-like interactions
 - **Modern web technologies** for scalable, responsive interfaces
 - **Financial sector use cases** for practical business applications
@@ -226,7 +221,6 @@ Perfect for demonstrating AI-powered customer service, voice banking, and teleco
 For questions about this demo or Infobip's APIs:
 - Visit [Infobip Developer Hub](https://www.infobip.com/developers)
 - Check out [Voice API Documentation](https://www.infobip.com/docs/voice)
-- Explore [SMS API Documentation](https://www.infobip.com/docs/sms)
 
 ---
 

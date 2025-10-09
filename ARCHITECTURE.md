@@ -41,7 +41,6 @@ Complete technical walkthrough of the Infobip Capital voice banking application.
 - **Web Form** (public/index.html)
 - **Registration Endpoint** (src/web/routes.js)
 - **Database Manager** (src/database/)
-- **SMS Service** (src/utils/smsService.js)
 
 ### Detailed Flow
 
@@ -59,7 +58,6 @@ Line 44-122: router.post('/api/register', async (req, res) => {
   // Validates input
   // Generates fake account data
   // Creates user in database
-  // Sends SMS confirmation
 })
 ```
 
@@ -71,7 +69,7 @@ Line 44-122: router.post('/api/register', async (req, res) => {
    - Random balance ($500 - $50,000)
    - Loan application status (if applicable)
 4. Calls `databaseManager.createUser(userData)`
-5. Sends SMS via `smsService.sendRegistrationConfirmation()`
+5. Returns success response with demo call number
 
 #### 1.3 Database Storage
 **File**: `src/database/PostgresManager.js` (or `databaseManager.js` for SQLite)
@@ -840,8 +838,6 @@ elevenLabsWs.on('close', (code, reason) => {
 #### `src/utils/phoneUtils.js`
 - `standardizeNorthAmerican(phone)` - Normalizes phone format
 
-#### `src/utils/smsService.js`
-- `sendRegistrationConfirmation(phone, userData)` - Sends SMS via Infobip
 
 #### `src/utils/jsonSanitizer.js`
 - `safeStringify(obj)` - Safe JSON serialization
@@ -857,8 +853,7 @@ User (Browser)
   → routes.js validates input
   → databaseManager.createUser()
   → PostgresManager inserts to DB
-  → smsService.sendRegistrationConfirmation()
-  → Response to user
+  → Response to user with demo call number
 ```
 
 ### Call Flow

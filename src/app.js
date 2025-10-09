@@ -1,7 +1,11 @@
-// Load environment variables
-// Railway provides DATABASE_URL as a service variable which needs to be referenced
-// Loading dotenv is safe - it won't override existing env vars
-require('dotenv').config();
+// Load environment variables from .env file if it exists
+// Railway provides environment variables directly, so .env is optional
+try {
+    require('dotenv').config();
+} catch (e) {
+    // .env file not found - this is fine in production
+    console.log('No .env file found (this is normal in production)');
+}
 
 // Debug: Log some key environment variables
 console.log('🔧 Environment Debug:');

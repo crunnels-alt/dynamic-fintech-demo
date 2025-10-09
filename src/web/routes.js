@@ -206,18 +206,19 @@ router.post('/api/register', [
         const user = await databaseManager.registerUser(standardizedUserData);
 
         // Return success response
+        // Handle both PostgreSQL (snake_case) and SQLite (camelCase) field names
         res.status(201).json({
             success: true,
             message: 'Registration successful',
             user: {
                 id: user.id,
                 name: user.name,
-                phoneNumber: user.phone_number,
-                companyName: user.company_name,
-                fakeAccountNumber: user.fake_account_number,
-                fakeAccountBalance: user.fake_account_balance,
-                loanApplicationStatus: user.loan_application_status,
-                fraudScenario: Boolean(user.fraud_scenario)
+                phoneNumber: user.phone_number || user.phoneNumber,
+                companyName: user.company_name || user.companyName,
+                fakeAccountNumber: user.fake_account_number || user.fakeAccountNumber,
+                fakeAccountBalance: user.fake_account_balance || user.fakeAccountBalance,
+                loanApplicationStatus: user.loan_application_status || user.loanApplicationStatus,
+                fraudScenario: Boolean(user.fraud_scenario || user.fraudScenario)
             },
             demoNumber: process.env.DEMO_CALL_NUMBER || '+1-XXX-XXX-XXXX'
         });

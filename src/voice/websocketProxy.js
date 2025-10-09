@@ -243,6 +243,7 @@ class WebSocketProxy {
                             dynamicVariables.verification_complete = true;
 
                             console.log('[ElevenLabs] Loaded context for:', dynamicVariables.customer_name);
+                            console.log('[ElevenLabs] 📋 Dynamic variables:', JSON.stringify(dynamicVariables, null, 2));
 
                             } catch (variableConstructionError) {
                                 console.error('[ElevenLabs] Failed to construct dynamic variables:', variableConstructionError.message);

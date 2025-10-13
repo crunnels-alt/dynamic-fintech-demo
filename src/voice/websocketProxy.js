@@ -122,6 +122,7 @@ class WebSocketProxy {
             let lastTtsTime = 0; // Start at 0 - will be updated when TTS audio arrives
             let keepaliveTimer = null;
             let silenceFrameCount = 0;
+            let keepaliveStarted = false; // Track if keepalive has been started
 
             // Generate PCM silence frame (16-bit PCM, 16kHz, mono, 20ms = 640 bytes)
             const generateSilenceFrame = () => {
@@ -130,8 +131,9 @@ class WebSocketProxy {
 
             // Continuous audio keepalive - sends silence when no TTS audio
             const startAudioKeepalive = () => {
-                if (!continuousKeepalive) return;
+                if (!continuousKeepalive || keepaliveStarted) return;
 
+                keepaliveStarted = true;
                 keepaliveTimer = setInterval(() => {
                     if (infobipWs.readyState !== WebSocket.OPEN) return;
 
@@ -155,7 +157,8 @@ class WebSocketProxy {
                     }
                 }, keepaliveIntervalMs);
 
-                console.log(`[Keepalive] Started continuous audio keepalive (${keepaliveIntervalMs}ms interval)`);
+                const keepaliveStartTime = Date.now() - connectionStartTime;
+                console.log(`[Keepalive] Started continuous audio keepalive at ${keepaliveStartTime}ms (${keepaliveIntervalMs}ms interval)`);
             };
 
             const stopAudioKeepalive = () => {
@@ -273,31 +276,59 @@ class WebSocketProxy {
                         // Mark ElevenLabs as ready and flush buffered audio
                         elevenLabsReady = true;
 
-                        // Start audio keepalive to prevent Infobip timeout
-                        const keepaliveStartTime = Date.now() - connectionStartTime;
-                        console.log(`[Timing] Keepalive starting at ${keepaliveStartTime}ms from Infobip connection`);
-                        startAudioKeepalive();
-
+                        // Analyze buffered audio for silence BEFORE committing
                         if (audioBuffer.length > 0) {
-                            console.log(`[Bridge] Flushing ${audioBuffer.length} buffered audio chunk(s) to ElevenLabs`);
+                            // Calculate average amplitude to detect silence
+                            let totalAmplitude = 0;
+                            let sampleCount = 0;
+
                             audioBuffer.forEach(audioChunk => {
-                                try {
-                                    elevenLabsWs.send(JSON.stringify({
-                                        user_audio_chunk: Buffer.from(audioChunk).toString('base64')
-                                    }));
-                                    audioChunksSinceLastCommit++;
-                                } catch (err) {
-                                    console.error('[Bridge] Error flushing buffered audio:', err.message);
+                                // Sample first 100 bytes of each chunk to detect silence
+                                const sampleSize = Math.min(100, audioChunk.length);
+                                for (let i = 0; i < sampleSize; i++) {
+                                    // For 8-bit PCM, pure silence is around 128 (DC offset)
+                                    // Calculate deviation from silence baseline
+                                    const deviation = Math.abs(audioChunk[i] - 128);
+                                    totalAmplitude += deviation;
+                                    sampleCount++;
                                 }
                             });
-                            audioBuffer = []; // Clear buffer after flushing
-                            console.log('[Bridge] Audio buffer flushed successfully');
 
-                            // Critical: Commit the buffered audio immediately so ElevenLabs processes it
-                            if (audioChunksSinceLastCommit > 0) {
-                                console.log('[Bridge] Committing buffered audio to ElevenLabs');
-                                doCommit();
+                            const avgAmplitude = sampleCount > 0 ? totalAmplitude / sampleCount : 0;
+                            const isSilence = avgAmplitude < 5; // Threshold for silence detection
+
+                            console.log(`[Bridge] Buffer analysis: ${audioBuffer.length} chunks, avg amplitude: ${avgAmplitude.toFixed(2)}, silence: ${isSilence}`);
+
+                            if (isSilence) {
+                                console.log('[Bridge] ⏭️  Discarding silent buffer - letting agent send proactive greeting');
+                                audioBuffer = []; // Discard silent buffer
+                                // Don't start keepalive yet - wait for agent greeting first
+                            } else {
+                                console.log(`[Bridge] Flushing ${audioBuffer.length} buffered audio chunk(s) to ElevenLabs`);
+                                audioBuffer.forEach(audioChunk => {
+                                    try {
+                                        elevenLabsWs.send(JSON.stringify({
+                                            user_audio_chunk: Buffer.from(audioChunk).toString('base64')
+                                        }));
+                                        audioChunksSinceLastCommit++;
+                                    } catch (err) {
+                                        console.error('[Bridge] Error flushing buffered audio:', err.message);
+                                    }
+                                });
+                                audioBuffer = []; // Clear buffer after flushing
+                                console.log('[Bridge] Audio buffer flushed successfully');
+
+                                // Commit the buffered audio immediately so ElevenLabs processes it
+                                if (audioChunksSinceLastCommit > 0) {
+                                    console.log('[Bridge] Committing buffered audio to ElevenLabs');
+                                    doCommit();
+                                }
+
+                                // Note: Keepalive will start automatically when agent responds
+                                console.log('[Bridge] Waiting for agent response before starting keepalive');
                             }
+                        } else {
+                            console.log('[Bridge] No buffered audio to process');
                         }
                     });
 
@@ -323,6 +354,11 @@ class WebSocketProxy {
                                         infobipWs.send(buff);
                                         // Update last TTS time to prevent keepalive from interfering
                                         lastTtsTime = Date.now();
+
+                                        // Start keepalive after first audio (agent is responding)
+                                        if (!keepaliveStarted) {
+                                            startAudioKeepalive();
+                                        }
                                     } else if (!audioData) {
                                         console.error('[ElevenLabs] Audio event missing audio_base_64 field');
                                     }
@@ -357,6 +393,11 @@ class WebSocketProxy {
                                     const agentText = message.agent_response_event?.agent_response || message.agent_response || '';
                                     if (agentText) {
                                         console.log(`[TRANSCRIPT] 🤖 Agent: "${agentText}"\n`);
+                                    }
+
+                                    // Start keepalive after first agent response (proactive greeting received)
+                                    if (!keepaliveStarted) {
+                                        startAudioKeepalive();
                                     }
                                     break;
                                 case 'error':

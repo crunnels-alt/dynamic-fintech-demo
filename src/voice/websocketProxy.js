@@ -130,19 +130,23 @@ class WebSocketProxy {
             };
 
             // Continuous audio keepalive - sends silence when no TTS audio
-            const startAudioKeepalive = () => {
+            const startAudioKeepalive = (immediate = false) => {
                 if (!continuousKeepalive || keepaliveStarted) return;
 
-                // Don't start keepalive until at least 1500ms have passed
-                // This gives the agent time to generate proactive greeting
-                const timeSinceConnection = Date.now() - connectionStartTime;
-                const minDelayMs = 1500;
+                // Only enforce delay if not in immediate mode
+                // Immediate mode is used when we discard silent buffers to prevent Infobip timeout
+                if (!immediate) {
+                    // Don't start keepalive until at least 1500ms have passed
+                    // This gives the agent time to generate proactive greeting
+                    const timeSinceConnection = Date.now() - connectionStartTime;
+                    const minDelayMs = 1500;
 
-                if (timeSinceConnection < minDelayMs) {
-                    const remainingDelay = minDelayMs - timeSinceConnection;
-                    console.log(`[Keepalive] Deferring start by ${remainingDelay}ms (need ${minDelayMs}ms minimum)`);
-                    setTimeout(startAudioKeepalive, remainingDelay);
-                    return;
+                    if (timeSinceConnection < minDelayMs) {
+                        const remainingDelay = minDelayMs - timeSinceConnection;
+                        console.log(`[Keepalive] Deferring start by ${remainingDelay}ms (need ${minDelayMs}ms minimum)`);
+                        setTimeout(() => startAudioKeepalive(false), remainingDelay);
+                        return;
+                    }
                 }
 
                 keepaliveStarted = true;
@@ -320,7 +324,7 @@ class WebSocketProxy {
                                 // Start keepalive immediately to prevent Infobip timeout
                                 // This sends silence to Infobip (not ElevenLabs), preventing disconnect
                                 console.log('[Bridge] Starting keepalive immediately to prevent Infobip timeout');
-                                startAudioKeepalive();
+                                startAudioKeepalive(true); // true = bypass delay, start immediately
                             } else {
                                 console.log(`[Bridge] Flushing ${audioBuffer.length} buffered audio chunk(s) to ElevenLabs`);
                                 audioBuffer.forEach(audioChunk => {

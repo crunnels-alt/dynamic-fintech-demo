@@ -34,6 +34,31 @@ class WebSocketProxy {
                 console.error('[Bridge] Failed to send early keepalive:', err.message);
             }
 
+            // CRITICAL: Send a brief "hold tone" IMMEDIATELY to satisfy Infobip's audio requirement
+            // Infobip requires actual audio (not just silence) within ~800ms
+            // This is sent BEFORE we even connect to ElevenLabs to eliminate any timing issues
+            console.log('[Bridge] Sending immediate hold tone to satisfy Infobip audio requirement');
+            try {
+                // Generate a 500ms pleasant tone (400Hz sine wave - like a gentle beep)
+                const sampleRate = 16000;
+                const durationMs = 500;
+                const frequency = 400;
+                const amplitude = 1000; // Very quiet
+                const numSamples = Math.floor(sampleRate * durationMs / 1000);
+                const toneBuffer = Buffer.alloc(numSamples * 2); // 16-bit = 2 bytes per sample
+
+                for (let i = 0; i < numSamples; i++) {
+                    const t = i / sampleRate;
+                    const sample = Math.floor(amplitude * Math.sin(2 * Math.PI * frequency * t));
+                    toneBuffer.writeInt16LE(sample, i * 2);
+                }
+
+                infobipWs.send(toneBuffer);
+                console.log('[Bridge] ✅ Sent immediate hold tone to Infobip (before ElevenLabs connection)');
+            } catch (err) {
+                console.error('[Bridge] ❌ Failed to send immediate hold tone:', err.message);
+            }
+
             // Extract customer context from active calls
             let customerContext = null;
             let matchedCallId = null;
@@ -376,29 +401,8 @@ class WebSocketProxy {
                                 // This sends silence to Infobip (not ElevenLabs), preventing disconnect
                                 console.log('[Bridge] Starting keepalive immediately to prevent Infobip timeout');
 
-                                // CRITICAL: Send a brief "hold tone" to satisfy Infobip's audio requirement
-                                // Infobip requires actual audio (not just silence) within ~800ms
-                                console.log('[Bridge] Sending hold tone to satisfy Infobip audio requirement');
-                                try {
-                                    // Generate a 500ms pleasant tone (400Hz sine wave - like a gentle beep)
-                                    const sampleRate = 16000;
-                                    const durationMs = 500;
-                                    const frequency = 400;
-                                    const amplitude = 1000; // Very quiet
-                                    const numSamples = Math.floor(sampleRate * durationMs / 1000);
-                                    const toneBuffer = Buffer.alloc(numSamples * 2); // 16-bit = 2 bytes per sample
-
-                                    for (let i = 0; i < numSamples; i++) {
-                                        const t = i / sampleRate;
-                                        const sample = Math.floor(amplitude * Math.sin(2 * Math.PI * frequency * t));
-                                        toneBuffer.writeInt16LE(sample, i * 2);
-                                    }
-
-                                    infobipWs.send(toneBuffer);
-                                    console.log('[Bridge] ✅ Sent hold tone to Infobip');
-                                } catch (err) {
-                                    console.error('[Bridge] ❌ Failed to send hold tone:', err.message);
-                                }
+                                // Note: Hold tone was already sent at connection time (before ElevenLabs connection)
+                                // No need to send again here - just start keepalive
 
                                 startAudioKeepalive(true); // true = bypass delay, start immediately
                             } else {

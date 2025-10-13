@@ -116,12 +116,6 @@ class WebSocketProxy {
             const maxCommitIntervalMs = Number(process.env.ELEVENLABS_MAX_COMMIT_INTERVAL_MS || 2000);
             const autoResponseCreate = (process.env.ELEVENLABS_AUTO_RESPONSE_CREATE ?? 'true').toLowerCase() !== 'false';
 
-            // Diagnostic timing variables
-            let commitSentTime = null;
-            let firstAgentResponseTime = null;
-            let firstAudioReceivedTime = null;
-            let infobipDisconnectTime = null;
-
             // Keepalive configuration
             const continuousKeepalive = (process.env.ELEVENLABS_CONTINUOUS_KEEPALIVE ?? 'true').toLowerCase() === 'true';
             const keepaliveIntervalMs = Number(process.env.ELEVENLABS_TTS_KEEPALIVE_INTERVAL_MS || 20);
@@ -188,12 +182,10 @@ class WebSocketProxy {
             const doCommit = () => {
                 if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN && audioChunksSinceLastCommit > 0) {
                     try {
-                        commitSentTime = Date.now();
                         elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
                         if (autoResponseCreate) {
                             elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
                         }
-                        console.log(`[Timing] Commit sent at ${commitSentTime - connectionStartTime}ms from connection start`);
                         audioChunksSinceLastCommit = 0;
                         lastCommitTime = Date.now();
                     } catch (e) {
@@ -288,21 +280,6 @@ class WebSocketProxy {
 
                         if (audioBuffer.length > 0) {
                             console.log(`[Bridge] Flushing ${audioBuffer.length} buffered audio chunk(s) to ElevenLabs`);
-
-                            // Analyze buffer content to detect if it's likely silence/noise
-                            let totalSize = 0;
-                            let totalAmplitude = 0;
-                            audioBuffer.forEach(audioChunk => {
-                                totalSize += audioChunk.length;
-                                // Sample first 100 bytes to estimate amplitude
-                                const sample = audioChunk.slice(0, Math.min(100, audioChunk.length));
-                                for (let i = 0; i < sample.length; i++) {
-                                    totalAmplitude += Math.abs(sample[i] - 128); // Assuming 8-bit or offset
-                                }
-                            });
-                            const avgAmplitude = totalAmplitude / (audioBuffer.length * 100);
-                            console.log(`[Bridge] Buffer analysis: ${audioBuffer.length} chunks, ${totalSize} bytes total, avg amplitude: ${avgAmplitude.toFixed(2)}`);
-
                             audioBuffer.forEach(audioChunk => {
                                 try {
                                     elevenLabsWs.send(JSON.stringify({
@@ -327,14 +304,6 @@ class WebSocketProxy {
                     elevenLabsWs.on('message', (data) => {
                         try {
                             const message = JSON.parse(data);
-                            const now = Date.now();
-                            const timeSinceConnection = now - connectionStartTime;
-
-                            // Log ALL message types with timing
-                            if (message.type !== 'ping') {
-                                const timeSinceCommit = commitSentTime ? now - commitSentTime : 'N/A';
-                                console.log(`[ElevenLabs] ${timeSinceConnection}ms: ${message.type} (${timeSinceCommit}ms since commit)`);
-                            }
 
                             // Debug: Log all message types to understand structure
                             if (message.type !== 'audio' && message.type !== 'ping') {
@@ -346,13 +315,6 @@ class WebSocketProxy {
                                     console.log('[ElevenLabs] Conversation initialized:', message.conversation_initiation_metadata_event?.conversation_id);
                                     break;
                                 case 'audio': {
-                                    // Track first audio received
-                                    if (!firstAudioReceivedTime) {
-                                        firstAudioReceivedTime = now;
-                                        const timeSinceCommit = commitSentTime ? firstAudioReceivedTime - commitSentTime : 'N/A';
-                                        console.log(`[Timing] ⭐ First audio received ${timeSinceCommit}ms after commit`);
-                                    }
-
                                     // Extract audio data from ElevenLabs response
                                     const audioData = message.audio_event?.audio_base_64;
 
@@ -363,8 +325,6 @@ class WebSocketProxy {
                                         lastTtsTime = Date.now();
                                     } else if (!audioData) {
                                         console.error('[ElevenLabs] Audio event missing audio_base_64 field');
-                                    } else if (infobipWs.readyState !== WebSocket.OPEN) {
-                                        console.warn(`[ElevenLabs] ⚠️ Audio received but Infobip disconnected ${now - infobipDisconnectTime}ms ago`);
                                     }
                                     break;
                                 }
@@ -394,13 +354,6 @@ class WebSocketProxy {
                                     }
                                     break;
                                 case 'agent_response':
-                                    // Track first agent response
-                                    if (!firstAgentResponseTime) {
-                                        firstAgentResponseTime = now;
-                                        const timeSinceCommit = commitSentTime ? firstAgentResponseTime - commitSentTime : 'N/A';
-                                        console.log(`[Timing] ⭐ First agent_response received ${timeSinceCommit}ms after commit`);
-                                    }
-
                                     const agentText = message.agent_response_event?.agent_response || message.agent_response || '';
                                     if (agentText) {
                                         console.log(`[TRANSCRIPT] 🤖 Agent: "${agentText}"\n`);
@@ -410,8 +363,7 @@ class WebSocketProxy {
                                     console.error('[ElevenLabs] Error:', message.error?.message || JSON.stringify(message));
                                     break;
                                 default:
-                                    // Log other message types we might be missing
-                                    console.log(`[ElevenLabs] Unknown message type: ${message.type}`);
+                                    // Silently handle other message types (user_transcript, agent_response, etc.)
                                     break;
                             }
                         } catch (error) {
@@ -565,28 +517,10 @@ class WebSocketProxy {
 
             // Handle WebSocket closure
             infobipWs.on('close', (code, reason) => {
-                infobipDisconnectTime = Date.now();
-                const timeSinceConnection = infobipDisconnectTime - connectionStartTime;
-                const timeSinceCommit = commitSentTime ? infobipDisconnectTime - commitSentTime : 'N/A';
-
-                console.log(`[Infobip] Client disconnected (code: ${code}) after ${timeSinceConnection}ms`);
-                console.log(`[Timing] 📊 Disconnect timing:`);
-                console.log(`  - Time since connection: ${timeSinceConnection}ms`);
-                console.log(`  - Time since commit: ${timeSinceCommit}ms`);
-                console.log(`  - Agent response received: ${firstAgentResponseTime ? 'YES' : 'NO'}`);
-                console.log(`  - Audio received: ${firstAudioReceivedTime ? 'YES' : 'NO'}`);
-
-                if (commitSentTime && !firstAgentResponseTime) {
-                    console.warn(`[Timing] ⚠️ ISSUE: Commit sent but NO agent_response received before disconnect`);
-                }
-                if (commitSentTime && !firstAudioReceivedTime) {
-                    console.warn(`[Timing] ⚠️ ISSUE: Commit sent but NO audio received before disconnect`);
-                }
-
                 clearCommit();
                 clearInterval(keepaliveInterval);
                 stopAudioKeepalive();
-
+                console.log(`[Infobip] Client disconnected (code: ${code})`);
                 if (elevenLabsWs?.readyState === WebSocket.OPEN) {
                     elevenLabsWs.close();
                 }

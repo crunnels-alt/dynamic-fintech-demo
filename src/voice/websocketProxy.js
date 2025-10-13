@@ -285,12 +285,19 @@ class WebSocketProxy {
                                     elevenLabsWs.send(JSON.stringify({
                                         user_audio_chunk: Buffer.from(audioChunk).toString('base64')
                                     }));
+                                    audioChunksSinceLastCommit++;
                                 } catch (err) {
                                     console.error('[Bridge] Error flushing buffered audio:', err.message);
                                 }
                             });
                             audioBuffer = []; // Clear buffer after flushing
                             console.log('[Bridge] Audio buffer flushed successfully');
+
+                            // Critical: Commit the buffered audio immediately so ElevenLabs processes it
+                            if (audioChunksSinceLastCommit > 0) {
+                                console.log('[Bridge] Committing buffered audio to ElevenLabs');
+                                doCommit();
+                            }
                         }
                     });
 

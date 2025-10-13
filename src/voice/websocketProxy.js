@@ -151,7 +151,10 @@ class WebSocketProxy {
 
                 keepaliveStarted = true;
                 keepaliveTimer = setInterval(() => {
-                    if (infobipWs.readyState !== WebSocket.OPEN) return;
+                    if (infobipWs.readyState !== WebSocket.OPEN) {
+                        console.log('[Keepalive] Infobip WS not open, skipping frame');
+                        return;
+                    }
 
                     const now = Date.now();
                     const timeSinceLastTts = lastTtsTime === 0 ? Infinity : (now - lastTtsTime);
@@ -163,12 +166,16 @@ class WebSocketProxy {
                             infobipWs.send(silenceFrame);
                             silenceFrameCount++;
 
-                            // Log every 50 frames (~1 second) to avoid spam
-                            if (silenceFrameCount % 50 === 0) {
-                                console.log(`[Keepalive] Sent ${silenceFrameCount} silence frames`);
+                            // Log every 10 frames (~200ms) for debugging
+                            if (silenceFrameCount % 10 === 0) {
+                                console.log(`[Keepalive] ✅ Sent ${silenceFrameCount} silence frames (${silenceFrameCount * keepaliveIntervalMs}ms total)`);
                             }
                         } catch (err) {
-                            console.error('[Keepalive] Error sending silence frame:', err.message);
+                            console.error('[Keepalive] ❌ Error sending silence frame:', err.message);
+                        }
+                    } else {
+                        if (silenceFrameCount === 0) {
+                            console.log('[Keepalive] Waiting for TTS gap (lastTtsTime:', lastTtsTime, 'ms ago)');
                         }
                     }
                 }, keepaliveIntervalMs);

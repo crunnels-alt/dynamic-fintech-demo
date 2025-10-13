@@ -317,7 +317,10 @@ class WebSocketProxy {
                             if (isSilence) {
                                 console.log('[Bridge] ⏭️  Discarding silent buffer - letting agent send proactive greeting');
                                 audioBuffer = []; // Discard silent buffer
-                                // Don't start keepalive yet - wait for agent greeting first
+                                // Start keepalive immediately to prevent Infobip timeout
+                                // This sends silence to Infobip (not ElevenLabs), preventing disconnect
+                                console.log('[Bridge] Starting keepalive immediately to prevent Infobip timeout');
+                                startAudioKeepalive();
                             } else {
                                 console.log(`[Bridge] Flushing ${audioBuffer.length} buffered audio chunk(s) to ElevenLabs`);
                                 audioBuffer.forEach(audioChunk => {

@@ -291,23 +291,26 @@ class WebSocketProxy {
                         // Analyze buffered audio for silence BEFORE committing
                         if (audioBuffer.length > 0) {
                             // Calculate average amplitude to detect silence
+                            // Infobip sends 16-bit PCM L16 (2 bytes per sample, little-endian)
                             let totalAmplitude = 0;
                             let sampleCount = 0;
 
                             audioBuffer.forEach(audioChunk => {
-                                // Sample first 100 bytes of each chunk to detect silence
-                                const sampleSize = Math.min(100, audioChunk.length);
-                                for (let i = 0; i < sampleSize; i++) {
-                                    // For 8-bit PCM, pure silence is around 128 (DC offset)
-                                    // Calculate deviation from silence baseline
-                                    const deviation = Math.abs(audioChunk[i] - 128);
-                                    totalAmplitude += deviation;
+                                // Sample first 100 16-bit samples (200 bytes) of each chunk
+                                const bytesToSample = Math.min(200, audioChunk.length - (audioChunk.length % 2)); // Ensure even bytes
+                                for (let i = 0; i < bytesToSample; i += 2) {
+                                    // Read 16-bit PCM sample (little-endian)
+                                    const sample = audioChunk.readInt16LE(i);
+                                    // For 16-bit PCM, silence is around 0 (signed range: -32768 to +32767)
+                                    const amplitude = Math.abs(sample);
+                                    totalAmplitude += amplitude;
                                     sampleCount++;
                                 }
                             });
 
                             const avgAmplitude = sampleCount > 0 ? totalAmplitude / sampleCount : 0;
-                            const isSilence = avgAmplitude < 5; // Threshold for silence detection
+                            // Threshold for silence: very low amplitude values (< 500 out of 32768)
+                            const isSilence = avgAmplitude < 500;
 
                             console.log(`[Bridge] Buffer analysis: ${audioBuffer.length} chunks, avg amplitude: ${avgAmplitude.toFixed(2)}, silence: ${isSilence}`);
 

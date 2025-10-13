@@ -24,6 +24,16 @@ class WebSocketProxy {
             const connectionStartTime = Date.now();
             console.log('[Bridge] New Infobip connection');
 
+            // Send immediate silence to Infobip to acknowledge connection
+            // This helps prevent premature disconnection during ElevenLabs setup
+            try {
+                const earlyKeepalive = Buffer.alloc(640, 0); // 20ms silence frame
+                infobipWs.send(earlyKeepalive);
+                console.log('[Bridge] Sent early keepalive frame to Infobip');
+            } catch (err) {
+                console.error('[Bridge] Failed to send early keepalive:', err.message);
+            }
+
             // Extract customer context from active calls
             let customerContext = null;
             let matchedCallId = null;
@@ -329,10 +339,33 @@ class WebSocketProxy {
                                 console.log('[Bridge] ⏭️  Discarding silent buffer - letting agent send proactive greeting');
                                 audioBuffer = []; // Discard silent buffer
 
+                                // Send a tiny "warmup" audio chunk to ElevenLabs
+                                // Some ElevenLabs agents need this to trigger the conversation flow
+                                console.log('[Bridge] Sending warmup audio chunk to prime ElevenLabs');
+                                try {
+                                    // Send 100ms of near-silence (very quiet audio)
+                                    const warmupChunk = Buffer.alloc(3200, 0); // 100ms at 16kHz 16-bit = 3200 bytes
+                                    // Add very faint noise so it's not pure silence (amplitude ~10)
+                                    for (let i = 0; i < warmupChunk.length; i += 2) {
+                                        const noise = Math.floor((Math.random() - 0.5) * 20); // Random noise ±10
+                                        warmupChunk.writeInt16LE(noise, i);
+                                    }
+
+                                    elevenLabsWs.send(JSON.stringify({
+                                        user_audio_chunk: warmupChunk.toString('base64')
+                                    }));
+                                    console.log('[Bridge] ✅ Sent warmup audio chunk');
+                                } catch (err) {
+                                    console.error('[Bridge] ❌ Failed to send warmup chunk:', err.message);
+                                }
+
                                 // Explicitly trigger ElevenLabs to generate proactive greeting
                                 // This is crucial - without user audio, ElevenLabs won't know to start speaking
                                 console.log('[Bridge] Requesting proactive greeting from ElevenLabs');
                                 try {
+                                    // Commit the warmup audio
+                                    elevenLabsWs.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+                                    // Then trigger response
                                     elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
                                     console.log('[Bridge] ✅ Triggered ElevenLabs response generation');
                                 } catch (err) {

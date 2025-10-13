@@ -133,6 +133,18 @@ class WebSocketProxy {
             const startAudioKeepalive = () => {
                 if (!continuousKeepalive || keepaliveStarted) return;
 
+                // Don't start keepalive until at least 1500ms have passed
+                // This gives the agent time to generate proactive greeting
+                const timeSinceConnection = Date.now() - connectionStartTime;
+                const minDelayMs = 1500;
+
+                if (timeSinceConnection < minDelayMs) {
+                    const remainingDelay = minDelayMs - timeSinceConnection;
+                    console.log(`[Keepalive] Deferring start by ${remainingDelay}ms (need ${minDelayMs}ms minimum)`);
+                    setTimeout(startAudioKeepalive, remainingDelay);
+                    return;
+                }
+
                 keepaliveStarted = true;
                 keepaliveTimer = setInterval(() => {
                     if (infobipWs.readyState !== WebSocket.OPEN) return;

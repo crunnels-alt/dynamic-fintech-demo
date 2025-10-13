@@ -328,6 +328,17 @@ class WebSocketProxy {
                             if (isSilence) {
                                 console.log('[Bridge] ⏭️  Discarding silent buffer - letting agent send proactive greeting');
                                 audioBuffer = []; // Discard silent buffer
+
+                                // Explicitly trigger ElevenLabs to generate proactive greeting
+                                // This is crucial - without user audio, ElevenLabs won't know to start speaking
+                                console.log('[Bridge] Requesting proactive greeting from ElevenLabs');
+                                try {
+                                    elevenLabsWs.send(JSON.stringify({ type: 'response.create' }));
+                                    console.log('[Bridge] ✅ Triggered ElevenLabs response generation');
+                                } catch (err) {
+                                    console.error('[Bridge] ❌ Failed to trigger ElevenLabs response:', err.message);
+                                }
+
                                 // Start keepalive immediately to prevent Infobip timeout
                                 // This sends silence to Infobip (not ElevenLabs), preventing disconnect
                                 console.log('[Bridge] Starting keepalive immediately to prevent Infobip timeout');
